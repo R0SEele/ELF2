@@ -104,3 +104,23 @@ class UARTBus:
                 raise SerialBusError("serial port is closed")
             self._ser.write(req)
             self._ser.flush()
+
+    def probe(self, req: bytes, read_timeout_s: float | None = None) -> bytes:
+        with self._lock:
+            if not self._ser.is_open:
+                raise SerialBusError("serial port is closed")
+
+            self._ser.reset_input_buffer()
+            self._ser.write(req)
+            self._ser.flush()
+
+            timeout_s = self._cfg.timeout_s if read_timeout_s is None else read_timeout_s
+            deadline = time.monotonic() + timeout_s
+            data = bytearray()
+            while time.monotonic() < deadline:
+                waiting = self._ser.in_waiting
+                if waiting > 0:
+                    data.extend(self._ser.read(waiting))
+                else:
+                    time.sleep(0.001)
+            return bytes(data)
