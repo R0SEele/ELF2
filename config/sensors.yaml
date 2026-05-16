@@ -1,0 +1,116 @@
+sensors:
+  sht30:
+    # I2C bus index (e.g. /dev/i2c-4).
+    bus: 4
+    # I2C slave address in hex string.
+    address: "0x44"
+    # Number of samples to average. Use 0 for single-shot.
+    sample_count: 0
+    # Interval between periodic reads.
+    read_interval_s: 1.0
+    # Max retries when transfer/read fails.
+    max_retries: 3
+    # Delay between retries.
+    retry_interval_s: 0.05
+
+  scd40:
+    # I2C bus index (e.g. /dev/i2c-4).
+    bus: 4
+    # I2C slave address in hex string.
+    address: "0x62"
+    # Number of samples to average. Use 0 for single-shot.
+    sample_count: 0
+    # Interval between periodic reads.
+    read_interval_s: 2.0
+    # Warmup time after start periodic measurement.
+    warmup_s: 5.0
+    # Max retries when transfer/read fails.
+    max_retries: 3
+    # Timeout waiting data-ready flag.
+    ready_timeout_s: 2.0
+    # Poll interval while waiting data-ready flag.
+    poll_interval_s: 0.2
+
+  gy302:
+    # I2C bus index (e.g. /dev/i2c-4).
+    bus: 4
+    # I2C slave address in hex string.
+    address: "0x23"
+    # BH1750 mode name.
+    mode: "one_time_high_res_1"
+    # Integration delay after mode command.
+    measure_delay_s: 0.18
+    # Number of samples to average. Use 0 for single-shot.
+    sample_count: 0
+    # Interval between periodic reads.
+    read_interval_s: 1.0
+    # Max retries when transfer/read fails.
+    max_retries: 3
+    # Delay between retries.
+    retry_interval_s: 0.05
+
+  as7341:
+    # I2C bus index (e.g. /dev/i2c-7).
+    bus: 7
+    # I2C slave address in hex string.
+    address: "0x39"
+    # Integration step count (0..255).
+    atime: 100
+    # Integration step size (0..65535).
+    astep: 999
+    # Analog gain, must be one of: 0.5,1,2,4,8,16,32,64,128,256,512.
+    gain: 128
+    # Timeout waiting for data-ready flag.
+    ready_timeout_s: 1.0
+    # Number of samples to average. Use 0 for single-shot.
+    sample_count: 0
+    # Interval between periodic reads.
+    read_interval_s: 1.0
+    # Max retries when transfer/read fails.
+    max_retries: 3
+    # Delay between retries.
+    retry_interval_s: 0.05
+    # Optional dark reference measured with sensor fully covered.
+    # dark_reference:
+    #   f1_415: 0
+    #   f2_445: 0
+    #   f3_480: 0
+    #   f4_515: 0
+    #   f5_555: 0
+    #   f6_590: 0
+    #   f7_630: 0
+    #   f8_680: 0
+    # Optional white reference measured on a stable white target.
+    # white_reference:
+    #   f1_415: 100
+    #   f2_445: 100
+    #   f3_480: 100
+    #   f4_515: 100
+    #   f5_555: 100
+    #   f6_590: 100
+    #   f7_630: 100
+    #   f8_680: 100
+
+  mq135:
+    # IIO device node name.
+    iio_device: "iio:device0"
+    # ADC/IIO channel index, VIN4 for MQ-135.
+    channel: 4
+    # Number of samples to average. Use 0 for single-shot.
+    sample_count: 0
+    # Interval between periodic reads.
+    read_interval_s: 1.0
+    # ADC full-scale reference millivolts.
+    adc_reference_mv: 1800.0
+    # ADC max raw code.
+    adc_raw_max: 4095.0
+    # MQ-135 load resistor value in kOhm.
+    load_resistance_kohm: 10.0
+    # Sensor calibration baseline R0 in kOhm.
+    calibration_r0_kohm: 76.63
+    # Gas model coefficient A (empirical).
+    gas_curve_a: 116.6020682
+    # Gas model coefficient B (empirical).
+    gas_curve_b: -2.769034857
+    # Scale factor for estimated ppm, 0.01 means decimal point shifts left by 2.
+    ppm_scale: 0.01

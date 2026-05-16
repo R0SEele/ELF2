@@ -1,0 +1,22 @@
+camera:
+  # Camera source: /dev/videoX, index (0/1/2...), or full GStreamer pipeline string.
+  source: /dev/video21
+  # Capture resolution requested from camera driver.
+  width: 1920
+  height: 1080
+  # Camera capture FPS target.
+  fps: 30
+  # GUI refresh FPS (can be lower than capture FPS to reduce render load).
+  display_fps: 20
+  # Display resize ratio before rendering (1.0 keeps original frame size).
+  render_scale: 1.0
+  # Use smooth scaling for better quality but higher CPU cost.
+  smooth_scaling: false
+  # Enable low-latency tuning in runtime.
+  low_latency: true
+  # Apply remote X11/MobaXterm-friendly tuning.
+  mobaxterm_mode: true
+  # Window title shown in the PyQt5 preview.
+  window_title: CAM
+  # OpenCV backend: auto | v4l2 | gstreamer
+  backend: v4l2
