@@ -10,17 +10,17 @@ motor:
     sync: 0
 
   kctrl:
-    # 速度模式下的初始速度(RPM)
+    # Initial speed in speed mode (RPM). / 速度模式下的初始速度(RPM)。
     default_speed_rpm: 1000.0
-    # 按键 1/2 每次减/加的速度步进(RPM)
+    # Speed step for key 1/2 decrement/increment (RPM). / 按键 1/2 每次减/加的速度步进(RPM)。
     speed_step_rpm: 10.0
-    # 允许速度范围(RPM)
+    # Allowed speed range (RPM). / 允许速度范围(RPM)。
     min_speed_rpm: 10.0
     max_speed_rpm: 2000.0
-    # 加速度参数(0~255)
+    # Acceleration parameter (0..255). / 加速度参数(0~255)。
     accel: 10
-    # 方向映射: q/e 对应的方向位
+    # Direction mapping: direction bits for q/e. / 方向映射：q/e 对应的方向位。
     forward_direction: 0
     reverse_direction: 1
-    # 是否等待驱动ACK。若驱动返回帧格式不稳定，建议 false。
+    # Wait for driver ACK; use false if ACK frame format is unstable. / 是否等待驱动 ACK；若驱动返回帧格式不稳定，建议 false。
     wait_ack: false

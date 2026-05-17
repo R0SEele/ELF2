@@ -1,0 +1,35 @@
+yolo11:
+  # RKNN model path. / RKNN 模型路径。
+  model: /home/elf/projects/deeplearning/fruits1_yolo11_rk3588_i8.rknn
+  # Class label file, one label per line. / 类别标签文件，每行一个类别。
+  labels: /home/elf/projects/deeplearning/yolo11_demo/labels.txt
+  # Camera source: /dev/videoX, numeric index, or full pipeline string. / 摄像头来源：/dev/videoX、数字索引或完整管线字符串。
+  camera: /dev/video21
+  # Model input image size in pixels. / 模型输入图像尺寸，单位为像素。
+  img_size: 640
+  # Detection confidence threshold. / 检测置信度阈值。
+  conf: 0.7
+  # Non-maximum suppression IoU threshold. / 非极大值抑制 IoU 阈值。
+  iou: 0.45
+  # Number of RKNNLite worker instances. / RKNNLite 推理实例数量。
+  workers: 3
+  # Input tensor layout sent to RKNNLite: nhwc or nchw. / 传给 RKNNLite 的输入张量布局：nhwc 或 nchw。
+  input_format: nhwc
+  # Whether output includes an objectness channel. / 输出是否包含 objectness 通道。
+  objectness: false
+  # Whether to apply sigmoid before thresholding. / 阈值过滤前是否应用 sigmoid。
+  sigmoid: false
+  # Optional requested camera width; 0 keeps driver default. / 可选摄像头宽度；0 表示使用驱动默认值。
+  width: 0
+  # Optional requested camera height; 0 keeps driver default. / 可选摄像头高度；0 表示使用驱动默认值。
+  height: 0
+  # Optional requested camera FPS; 0 keeps driver default. / 可选摄像头帧率；0 表示使用驱动默认值。
+  fps: 0
+  # Optional display width; 0 keeps original frame width. / 可选显示宽度；0 表示保持原始帧宽度。
+  display_width: 0
+  # Optional display height; 0 keeps original frame height. / 可选显示高度；0 表示保持原始帧高度。
+  display_height: 0
+  # Disable OpenCV display window when true. / 为 true 时禁用 OpenCV 显示窗口。
+  no_display: false
+  # OpenCV display window title. / OpenCV 显示窗口标题。
+  window: yolo11_rknn_camera
