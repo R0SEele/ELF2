@@ -1,0 +1,1 @@
+timestamp,frame_index,detection_id,label,confidence,x1,y1,x2,y2,area_px,rgb_r_mean,rgb_g_mean,rgb_b_mean,hsv_h_mean_deg,hsv_s_mean_pct,hsv_v_mean_pct

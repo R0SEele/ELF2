@@ -390,6 +390,49 @@ def draw_detections(image, boxes, class_ids, scores, labels):
     return image
 
 
+def extract_color_features(image, boxes, class_ids, scores, labels):
+    features = []
+    height, width = image.shape[:2]
+
+    for index, (box, class_id, score) in enumerate(zip(boxes, class_ids, scores)):
+        x1, y1, x2, y2 = box.astype(int)
+        x1 = max(0, min(width - 1, x1))
+        x2 = max(0, min(width - 1, x2))
+        y1 = max(0, min(height - 1, y1))
+        y2 = max(0, min(height - 1, y2))
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        roi = image[y1:y2 + 1, x1:x2 + 1]
+        if roi.size == 0:
+            continue
+
+        b_mean, g_mean, r_mean = roi.reshape(-1, 3).mean(axis=0)
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        h_mean, s_mean, v_mean = hsv.reshape(-1, 3).mean(axis=0)
+
+        features.append(
+            {
+                "detection_id": index,
+                "label": labels[int(class_id)],
+                "confidence": float(score),
+                "x1": int(x1),
+                "y1": int(y1),
+                "x2": int(x2),
+                "y2": int(y2),
+                "area_px": int((x2 - x1 + 1) * (y2 - y1 + 1)),
+                "rgb_r_mean": float(r_mean),
+                "rgb_g_mean": float(g_mean),
+                "rgb_b_mean": float(b_mean),
+                "hsv_h_mean_deg": float(h_mean) * 2.0,
+                "hsv_s_mean_pct": float(s_mean) * 100.0 / 255.0,
+                "hsv_v_mean_pct": float(v_mean) * 100.0 / 255.0,
+            }
+        )
+
+    return features
+
+
 class YOLO11RKNNDetector:
     def __init__(
         self,
@@ -443,4 +486,5 @@ class YOLO11RKNNDetector:
         if self.labels is None:
             self.labels = make_default_labels(class_count)
 
-        return draw_detections(frame, boxes, class_ids, scores, self.labels), len(scores)
+        color_features = extract_color_features(frame, boxes, class_ids, scores, self.labels)
+        return draw_detections(frame, boxes, class_ids, scores, self.labels), len(scores), color_features

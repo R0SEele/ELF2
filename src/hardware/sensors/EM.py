@@ -56,101 +56,131 @@ def _as_i2c_address(value, default):
 class EnvironmentMonitor:
 	def __init__(self, sensors_cfg):
 		self._sensors_cfg = sensors_cfg
+		self._init_errors = {}
+		self._sht30 = None
+		self._scd40 = None
+		self._gy302 = None
+		self._mq135 = None
 
 		sht_cfg = sensors_cfg.get("sht30", {})
 		self._sht30_max_retries = int(sht_cfg.get("max_retries", 3))
 		self._sht30_retry_interval_s = float(sht_cfg.get("retry_interval_s", 0.05))
-		self._sht30 = SHT30(
-			bus=int(sht_cfg.get("bus", 4)),
-			address=_as_i2c_address(sht_cfg.get("address", "0x44"), 0x44),
-		)
+		try:
+			self._sht30 = SHT30(
+				bus=int(sht_cfg.get("bus", 4)),
+				address=_as_i2c_address(sht_cfg.get("address", "0x44"), 0x44),
+			)
+		except SHT30Error as exc:
+			self._init_errors["sht30"] = str(exc)
 
 		scd_cfg = sensors_cfg.get("scd40", {})
 		self._scd40_max_retries = int(scd_cfg.get("max_retries", 3))
 		self._scd40_ready_timeout_s = float(scd_cfg.get("ready_timeout_s", 2.0))
 		self._scd40_poll_interval_s = float(scd_cfg.get("poll_interval_s", 0.2))
-		self._scd40 = SCD40(
-			bus=int(scd_cfg.get("bus", 4)),
-			address=_as_i2c_address(scd_cfg.get("address", "0x62"), 0x62),
-			warmup_s=float(scd_cfg.get("warmup_s", 5.0)),
-		)
-		self._scd40.start_periodic_measurement()
+		try:
+			self._scd40 = SCD40(
+				bus=int(scd_cfg.get("bus", 4)),
+				address=_as_i2c_address(scd_cfg.get("address", "0x62"), 0x62),
+				warmup_s=float(scd_cfg.get("warmup_s", 5.0)),
+			)
+			self._scd40.start_periodic_measurement()
+		except SCD40Error as exc:
+			self._init_errors["scd40"] = str(exc)
 
 		gy_cfg = sensors_cfg.get("gy302", {})
 		self._gy302_max_retries = int(gy_cfg.get("max_retries", 3))
 		self._gy302_retry_interval_s = float(gy_cfg.get("retry_interval_s", 0.05))
-		self._gy302 = GY302(
-			bus=int(gy_cfg.get("bus", 4)),
-			address=_as_i2c_address(gy_cfg.get("address", "0x23"), 0x23),
-			mode=str(gy_cfg.get("mode", "one_time_high_res_1")),
-			measure_delay_s=float(gy_cfg.get("measure_delay_s", 0.18)),
-		)
+		try:
+			self._gy302 = GY302(
+				bus=int(gy_cfg.get("bus", 4)),
+				address=_as_i2c_address(gy_cfg.get("address", "0x23"), 0x23),
+				mode=str(gy_cfg.get("mode", "one_time_high_res_1")),
+				measure_delay_s=float(gy_cfg.get("measure_delay_s", 0.18)),
+			)
+		except GY302Error as exc:
+			self._init_errors["gy302"] = str(exc)
 
 		mq_cfg = sensors_cfg.get("mq135", {})
-		self._mq135 = MQ135(
-			adc=MQ135ADC(
-				iio_device=str(mq_cfg.get("iio_device", "iio:device0")),
-				channel=int(mq_cfg.get("channel", 4)),
-			),
-			adc_reference_mv=float(mq_cfg.get("adc_reference_mv", 1800.0)),
-			adc_raw_max=float(mq_cfg.get("adc_raw_max", 4095.0)),
-			load_resistance_kohm=float(mq_cfg.get("load_resistance_kohm", 10.0)),
-			calibration_r0_kohm=float(mq_cfg.get("calibration_r0_kohm", 76.63)),
-			gas_curve_a=float(mq_cfg.get("gas_curve_a", 116.6020682)),
-			gas_curve_b=float(mq_cfg.get("gas_curve_b", -2.769034857)),
-			ppm_scale=float(mq_cfg.get("ppm_scale", 0.01)),
-		)
+		try:
+			self._mq135 = MQ135(
+				adc=MQ135ADC(
+					iio_device=str(mq_cfg.get("iio_device", "iio:device0")),
+					channel=int(mq_cfg.get("channel", 4)),
+				),
+				adc_reference_mv=float(mq_cfg.get("adc_reference_mv", 1800.0)),
+				adc_raw_max=float(mq_cfg.get("adc_raw_max", 4095.0)),
+				load_resistance_kohm=float(mq_cfg.get("load_resistance_kohm", 10.0)),
+				calibration_r0_kohm=float(mq_cfg.get("calibration_r0_kohm", 76.63)),
+				gas_curve_a=float(mq_cfg.get("gas_curve_a", 116.6020682)),
+				gas_curve_b=float(mq_cfg.get("gas_curve_b", -2.769034857)),
+				ppm_scale=float(mq_cfg.get("ppm_scale", 0.01)),
+			)
+		except MQ135Error as exc:
+			self._init_errors["mq135"] = str(exc)
 
 	def close(self):
-		try:
-			self._scd40.stop_periodic_measurement()
-		except SCD40Error:
-			pass
+		if self._scd40 is not None:
+			try:
+				self._scd40.stop_periodic_measurement()
+			except SCD40Error:
+				pass
 
 	def read_all(self):
 		readings = {}
 
-		try:
-			temperature_c, humidity_rh = self._sht30.read_with_retry(
-				max_retries=self._sht30_max_retries,
-				retry_interval_s=self._sht30_retry_interval_s,
-			)
-			readings["sht30"] = {
-				"ok": True,
-				"temperature_c": temperature_c,
-				"humidity_rh": humidity_rh,
-			}
-		except SHT30Error as exc:
-			readings["sht30"] = {"ok": False, "error": str(exc)}
+		if self._sht30 is None:
+			readings["sht30"] = {"ok": False, "error": self._init_errors.get("sht30", "not initialized")}
+		else:
+			try:
+				temperature_c, humidity_rh = self._sht30.read_with_retry(
+					max_retries=self._sht30_max_retries,
+					retry_interval_s=self._sht30_retry_interval_s,
+				)
+				readings["sht30"] = {
+					"ok": True,
+					"temperature_c": temperature_c,
+					"humidity_rh": humidity_rh,
+				}
+			except SHT30Error as exc:
+				readings["sht30"] = {"ok": False, "error": str(exc)}
 
-		try:
-			co2_ppm, temperature_c, humidity_rh = self._scd40.read_with_retry(
-				max_retries=self._scd40_max_retries,
-				ready_timeout_s=self._scd40_ready_timeout_s,
-				poll_interval_s=self._scd40_poll_interval_s,
-			)
-			readings["scd40"] = {
-				"ok": True,
-				"co2_ppm": co2_ppm,
-				"temperature_c": temperature_c,
-				"humidity_rh": humidity_rh,
-			}
-		except SCD40Error as exc:
-			readings["scd40"] = {"ok": False, "error": str(exc)}
+		if self._scd40 is None:
+			readings["scd40"] = {"ok": False, "error": self._init_errors.get("scd40", "not initialized")}
+		else:
+			try:
+				co2_ppm, temperature_c, humidity_rh = self._scd40.read_with_retry(
+					max_retries=self._scd40_max_retries,
+					ready_timeout_s=self._scd40_ready_timeout_s,
+					poll_interval_s=self._scd40_poll_interval_s,
+				)
+				readings["scd40"] = {
+					"ok": True,
+					"co2_ppm": co2_ppm,
+					"temperature_c": temperature_c,
+					"humidity_rh": humidity_rh,
+				}
+			except SCD40Error as exc:
+				readings["scd40"] = {"ok": False, "error": str(exc)}
 
-		try:
-			raw, lux = self._gy302.read_with_retry(
-				max_retries=self._gy302_max_retries,
-				retry_interval_s=self._gy302_retry_interval_s,
-			)
-			readings["gy302"] = {"ok": True, "raw": raw, "lux": lux}
-		except GY302Error as exc:
-			readings["gy302"] = {"ok": False, "error": str(exc)}
+		if self._gy302 is None:
+			readings["gy302"] = {"ok": False, "error": self._init_errors.get("gy302", "not initialized")}
+		else:
+			try:
+				raw, lux = self._gy302.read_with_retry(
+					max_retries=self._gy302_max_retries,
+					retry_interval_s=self._gy302_retry_interval_s,
+				)
+				readings["gy302"] = {"ok": True, "raw": raw, "lux": lux}
+			except GY302Error as exc:
+				readings["gy302"] = {"ok": False, "error": str(exc)}
 
-		try:
-			readings["mq135"] = {"ok": True, **self._mq135.read_once()}
-		except MQ135Error as exc:
-			readings["mq135"] = {"ok": False, "error": str(exc)}
+		if self._mq135 is None:
+			readings["mq135"] = {"ok": False, "error": self._init_errors.get("mq135", "not initialized")}
+		else:
+			try:
+				readings["mq135"] = {"ok": True, **self._mq135.read_once()}
+			except MQ135Error as exc:
+				readings["mq135"] = {"ok": False, "error": str(exc)}
 
 		return readings
 

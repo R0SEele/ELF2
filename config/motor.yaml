@@ -24,3 +24,12 @@ motor:
     reverse_direction: 1
     # Wait for driver ACK; use false if ACK frame format is unstable. / 是否等待驱动 ACK；若驱动返回帧格式不稳定，建议 false。
     wait_ack: false
+
+  conveyor:
+    # Qt conveyor speed range is 0.1~0.5 m/s. These RPM endpoints are used
+    # when roller_diameter_m or rpm_per_ms is not configured.
+    min_speed_rpm: 10.0
+    max_speed_rpm: 2000.0
+    # Optional calibration alternatives:
+    # rpm_per_ms: 4000.0
+    # roller_diameter_m: 0.06

@@ -31,5 +31,9 @@ yolo11:
   display_height: 0
   # Disable OpenCV display window when true. / 为 true 时禁用 OpenCV 显示窗口。
   no_display: false
+  # X11 DISPLAY to use when running from SSH without DISPLAY. / 从 SSH 运行且未设置 DISPLAY 时使用的 X11 显示。
+  display: ":0"
+  # Xauthority file for the local desktop session. / 本地图形桌面会话的 Xauthority 文件。
+  xauthority: /run/user/1000/gdm/Xauthority
   # OpenCV display window title. / OpenCV 显示窗口标题。
   window: yolo11_rknn_camera
