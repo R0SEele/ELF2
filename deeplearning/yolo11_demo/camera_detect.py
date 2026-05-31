@@ -19,7 +19,7 @@ DEFAULT_COLOR_CSV = "/home/elf/projects/datas/csv/vision_color_realtime.csv"
 
 
 DEFAULTS = {
-    "model": "/home/elf/projects/deeplearning/fruits1_yolo11_rk3588_i8.rknn",
+    "model": "/home/elf/projects/deeplearning/mango_yolo11_rk3588_i8.rknn",
     "labels": "/home/elf/projects/deeplearning/yolo11_demo/labels.txt",
     "camera": "/dev/video21",
     "img_size": 640,
@@ -233,6 +233,10 @@ COLOR_CSV_FIELDS = [
     "hsv_h_mean_deg",
     "hsv_s_mean_pct",
     "hsv_v_mean_pct",
+    "green_ratio",
+    "yellow_orange_ratio",
+    "dark_spot_ratio",
+    "brown_area_ratio",
 ]
 
 
@@ -254,7 +258,19 @@ def write_color_features(csv_path, frame_index, features):
                 "frame_index": frame_index,
                 **feature,
             }
-            for key in ("confidence", "rgb_r_mean", "rgb_g_mean", "rgb_b_mean", "hsv_h_mean_deg", "hsv_s_mean_pct", "hsv_v_mean_pct"):
+            for key in (
+                "confidence",
+                "rgb_r_mean",
+                "rgb_g_mean",
+                "rgb_b_mean",
+                "hsv_h_mean_deg",
+                "hsv_s_mean_pct",
+                "hsv_v_mean_pct",
+                "green_ratio",
+                "yellow_orange_ratio",
+                "dark_spot_ratio",
+                "brown_area_ratio",
+            ):
                 row[key] = "{:.4f}".format(float(row[key]))
             writer.writerow(row)
 

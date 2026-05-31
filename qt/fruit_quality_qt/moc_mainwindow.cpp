@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_MainWindow_t {
-    QByteArrayData data[29];
-    char stringdata0[499];
+    QByteArrayData data[33];
+    char stringdata0[596];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -40,38 +40,45 @@ QT_MOC_LITERAL(4, 42, 13), // "showStartPage"
 QT_MOC_LITERAL(5, 56, 20), // "showFunctionHomePage"
 QT_MOC_LITERAL(6, 77, 23), // "showConveyorControlPage"
 QT_MOC_LITERAL(7, 101, 18), // "showLedControlPage"
-QT_MOC_LITERAL(8, 120, 17), // "refreshSensorData"
-QT_MOC_LITERAL(9, 138, 18), // "readSensorMessages"
-QT_MOC_LITERAL(10, 157, 20), // "handleSensorFinished"
-QT_MOC_LITERAL(11, 178, 8), // "exitCode"
-QT_MOC_LITERAL(12, 187, 20), // "QProcess::ExitStatus"
-QT_MOC_LITERAL(13, 208, 10), // "exitStatus"
-QT_MOC_LITERAL(14, 219, 16), // "readCameraFrames"
-QT_MOC_LITERAL(15, 236, 18), // "readCameraMessages"
-QT_MOC_LITERAL(16, 255, 20), // "handleCameraFinished"
-QT_MOC_LITERAL(17, 276, 24), // "updateConveyorSpeedLabel"
-QT_MOC_LITERAL(18, 301, 5), // "value"
-QT_MOC_LITERAL(19, 307, 18), // "applyConveyorSpeed"
-QT_MOC_LITERAL(20, 326, 20), // "startConveyorForward"
-QT_MOC_LITERAL(21, 347, 20), // "startConveyorReverse"
-QT_MOC_LITERAL(22, 368, 12), // "stopConveyor"
-QT_MOC_LITERAL(23, 381, 24), // "updateLedBrightnessLabel"
-QT_MOC_LITERAL(24, 406, 23), // "updateLedThresholdLabel"
-QT_MOC_LITERAL(25, 430, 18), // "applyLedBrightness"
-QT_MOC_LITERAL(26, 449, 10), // "turnLedOff"
-QT_MOC_LITERAL(27, 460, 17), // "toggleLedAutoMode"
-QT_MOC_LITERAL(28, 478, 20) // "updateLedAutoControl"
+QT_MOC_LITERAL(8, 120, 20), // "showMangoQualityPage"
+QT_MOC_LITERAL(9, 141, 17), // "refreshSensorData"
+QT_MOC_LITERAL(10, 159, 23), // "refreshMangoQualityData"
+QT_MOC_LITERAL(11, 183, 18), // "readSensorMessages"
+QT_MOC_LITERAL(12, 202, 20), // "handleSensorFinished"
+QT_MOC_LITERAL(13, 223, 8), // "exitCode"
+QT_MOC_LITERAL(14, 232, 20), // "QProcess::ExitStatus"
+QT_MOC_LITERAL(15, 253, 10), // "exitStatus"
+QT_MOC_LITERAL(16, 264, 24), // "readMangoQualityMessages"
+QT_MOC_LITERAL(17, 289, 26), // "handleMangoQualityFinished"
+QT_MOC_LITERAL(18, 316, 16), // "readCameraFrames"
+QT_MOC_LITERAL(19, 333, 18), // "readCameraMessages"
+QT_MOC_LITERAL(20, 352, 20), // "handleCameraFinished"
+QT_MOC_LITERAL(21, 373, 24), // "updateConveyorSpeedLabel"
+QT_MOC_LITERAL(22, 398, 5), // "value"
+QT_MOC_LITERAL(23, 404, 18), // "applyConveyorSpeed"
+QT_MOC_LITERAL(24, 423, 20), // "startConveyorForward"
+QT_MOC_LITERAL(25, 444, 20), // "startConveyorReverse"
+QT_MOC_LITERAL(26, 465, 12), // "stopConveyor"
+QT_MOC_LITERAL(27, 478, 24), // "updateLedBrightnessLabel"
+QT_MOC_LITERAL(28, 503, 23), // "updateLedThresholdLabel"
+QT_MOC_LITERAL(29, 527, 18), // "applyLedBrightness"
+QT_MOC_LITERAL(30, 546, 10), // "turnLedOff"
+QT_MOC_LITERAL(31, 557, 17), // "toggleLedAutoMode"
+QT_MOC_LITERAL(32, 575, 20) // "updateLedAutoControl"
 
     },
     "MainWindow\0shutdownHardware\0\0showWorkPage\0"
     "showStartPage\0showFunctionHomePage\0"
     "showConveyorControlPage\0showLedControlPage\0"
-    "refreshSensorData\0readSensorMessages\0"
+    "showMangoQualityPage\0refreshSensorData\0"
+    "refreshMangoQualityData\0readSensorMessages\0"
     "handleSensorFinished\0exitCode\0"
     "QProcess::ExitStatus\0exitStatus\0"
-    "readCameraFrames\0readCameraMessages\0"
-    "handleCameraFinished\0updateConveyorSpeedLabel\0"
-    "value\0applyConveyorSpeed\0startConveyorForward\0"
+    "readMangoQualityMessages\0"
+    "handleMangoQualityFinished\0readCameraFrames\0"
+    "readCameraMessages\0handleCameraFinished\0"
+    "updateConveyorSpeedLabel\0value\0"
+    "applyConveyorSpeed\0startConveyorForward\0"
     "startConveyorReverse\0stopConveyor\0"
     "updateLedBrightnessLabel\0"
     "updateLedThresholdLabel\0applyLedBrightness\0"
@@ -86,7 +93,7 @@ static const uint qt_meta_data_MainWindow[] = {
        8,       // revision
        0,       // classname
        0,    0, // classinfo
-      23,   14, // methods
+      27,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -94,29 +101,33 @@ static const uint qt_meta_data_MainWindow[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags
-       1,    0,  129,    2, 0x0a /* Public */,
-       3,    0,  130,    2, 0x08 /* Private */,
-       4,    0,  131,    2, 0x08 /* Private */,
-       5,    0,  132,    2, 0x08 /* Private */,
-       6,    0,  133,    2, 0x08 /* Private */,
-       7,    0,  134,    2, 0x08 /* Private */,
-       8,    0,  135,    2, 0x08 /* Private */,
-       9,    0,  136,    2, 0x08 /* Private */,
-      10,    2,  137,    2, 0x08 /* Private */,
-      14,    0,  142,    2, 0x08 /* Private */,
-      15,    0,  143,    2, 0x08 /* Private */,
-      16,    2,  144,    2, 0x08 /* Private */,
-      17,    1,  149,    2, 0x08 /* Private */,
-      19,    0,  152,    2, 0x08 /* Private */,
-      20,    0,  153,    2, 0x08 /* Private */,
-      21,    0,  154,    2, 0x08 /* Private */,
-      22,    0,  155,    2, 0x08 /* Private */,
-      23,    1,  156,    2, 0x08 /* Private */,
-      24,    1,  159,    2, 0x08 /* Private */,
-      25,    0,  162,    2, 0x08 /* Private */,
-      26,    0,  163,    2, 0x08 /* Private */,
-      27,    0,  164,    2, 0x08 /* Private */,
-      28,    0,  165,    2, 0x08 /* Private */,
+       1,    0,  149,    2, 0x0a /* Public */,
+       3,    0,  150,    2, 0x08 /* Private */,
+       4,    0,  151,    2, 0x08 /* Private */,
+       5,    0,  152,    2, 0x08 /* Private */,
+       6,    0,  153,    2, 0x08 /* Private */,
+       7,    0,  154,    2, 0x08 /* Private */,
+       8,    0,  155,    2, 0x08 /* Private */,
+       9,    0,  156,    2, 0x08 /* Private */,
+      10,    0,  157,    2, 0x08 /* Private */,
+      11,    0,  158,    2, 0x08 /* Private */,
+      12,    2,  159,    2, 0x08 /* Private */,
+      16,    0,  164,    2, 0x08 /* Private */,
+      17,    2,  165,    2, 0x08 /* Private */,
+      18,    0,  170,    2, 0x08 /* Private */,
+      19,    0,  171,    2, 0x08 /* Private */,
+      20,    2,  172,    2, 0x08 /* Private */,
+      21,    1,  177,    2, 0x08 /* Private */,
+      23,    0,  180,    2, 0x08 /* Private */,
+      24,    0,  181,    2, 0x08 /* Private */,
+      25,    0,  182,    2, 0x08 /* Private */,
+      26,    0,  183,    2, 0x08 /* Private */,
+      27,    1,  184,    2, 0x08 /* Private */,
+      28,    1,  187,    2, 0x08 /* Private */,
+      29,    0,  190,    2, 0x08 /* Private */,
+      30,    0,  191,    2, 0x08 /* Private */,
+      31,    0,  192,    2, 0x08 /* Private */,
+      32,    0,  193,    2, 0x08 /* Private */,
 
  // slots: parameters
     QMetaType::Void,
@@ -127,17 +138,21 @@ static const uint qt_meta_data_MainWindow[] = {
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int, 0x80000000 | 12,   11,   13,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int, 0x80000000 | 12,   11,   13,
-    QMetaType::Void, QMetaType::Int,   18,
+    QMetaType::Void, QMetaType::Int, 0x80000000 | 14,   13,   15,
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::Int, 0x80000000 | 14,   13,   15,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::Int, 0x80000000 | 14,   13,   15,
+    QMetaType::Void, QMetaType::Int,   22,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   18,
-    QMetaType::Void, QMetaType::Int,   18,
+    QMetaType::Void, QMetaType::Int,   22,
+    QMetaType::Void, QMetaType::Int,   22,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
@@ -158,23 +173,27 @@ void MainWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 3: _t->showFunctionHomePage(); break;
         case 4: _t->showConveyorControlPage(); break;
         case 5: _t->showLedControlPage(); break;
-        case 6: _t->refreshSensorData(); break;
-        case 7: _t->readSensorMessages(); break;
-        case 8: _t->handleSensorFinished((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< QProcess::ExitStatus(*)>(_a[2]))); break;
-        case 9: _t->readCameraFrames(); break;
-        case 10: _t->readCameraMessages(); break;
-        case 11: _t->handleCameraFinished((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< QProcess::ExitStatus(*)>(_a[2]))); break;
-        case 12: _t->updateConveyorSpeedLabel((*reinterpret_cast< int(*)>(_a[1]))); break;
-        case 13: _t->applyConveyorSpeed(); break;
-        case 14: _t->startConveyorForward(); break;
-        case 15: _t->startConveyorReverse(); break;
-        case 16: _t->stopConveyor(); break;
-        case 17: _t->updateLedBrightnessLabel((*reinterpret_cast< int(*)>(_a[1]))); break;
-        case 18: _t->updateLedThresholdLabel((*reinterpret_cast< int(*)>(_a[1]))); break;
-        case 19: _t->applyLedBrightness(); break;
-        case 20: _t->turnLedOff(); break;
-        case 21: _t->toggleLedAutoMode(); break;
-        case 22: _t->updateLedAutoControl(); break;
+        case 6: _t->showMangoQualityPage(); break;
+        case 7: _t->refreshSensorData(); break;
+        case 8: _t->refreshMangoQualityData(); break;
+        case 9: _t->readSensorMessages(); break;
+        case 10: _t->handleSensorFinished((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< QProcess::ExitStatus(*)>(_a[2]))); break;
+        case 11: _t->readMangoQualityMessages(); break;
+        case 12: _t->handleMangoQualityFinished((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< QProcess::ExitStatus(*)>(_a[2]))); break;
+        case 13: _t->readCameraFrames(); break;
+        case 14: _t->readCameraMessages(); break;
+        case 15: _t->handleCameraFinished((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< QProcess::ExitStatus(*)>(_a[2]))); break;
+        case 16: _t->updateConveyorSpeedLabel((*reinterpret_cast< int(*)>(_a[1]))); break;
+        case 17: _t->applyConveyorSpeed(); break;
+        case 18: _t->startConveyorForward(); break;
+        case 19: _t->startConveyorReverse(); break;
+        case 20: _t->stopConveyor(); break;
+        case 21: _t->updateLedBrightnessLabel((*reinterpret_cast< int(*)>(_a[1]))); break;
+        case 22: _t->updateLedThresholdLabel((*reinterpret_cast< int(*)>(_a[1]))); break;
+        case 23: _t->applyLedBrightness(); break;
+        case 24: _t->turnLedOff(); break;
+        case 25: _t->toggleLedAutoMode(); break;
+        case 26: _t->updateLedAutoControl(); break;
         default: ;
         }
     }
@@ -209,13 +228,13 @@ int MainWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 23)
+        if (_id < 27)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 23;
+        _id -= 27;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 23)
+        if (_id < 27)
             *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 23;
+        _id -= 27;
     }
     return _id;
 }

@@ -7,13 +7,51 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QMainWindow>
+#include <QPaintEvent>
 #include <QPixmap>
 #include <QProcess>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSlider>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QVector>
+#include <QWidget>
+
+class VideoDisplayWidget : public QWidget
+{
+public:
+    explicit VideoDisplayWidget(QWidget *parent = nullptr);
+
+    void setFrame(const QPixmap &frame);
+    void setMessage(const QString &message);
+    void clearFrame();
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QPixmap m_frame;
+    QString m_message;
+};
+
+class AspectRatioVideoFrame : public QFrame
+{
+public:
+    explicit AspectRatioVideoFrame(QWidget *parent = nullptr);
+
+    void setContentWidget(QWidget *content);
+    void setAspectRatioFromSize(const QSize &size);
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
+private:
+    void updateContentGeometry();
+
+    QWidget *m_content;
+    double m_aspectRatio;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -32,9 +70,13 @@ private slots:
     void showFunctionHomePage();
     void showConveyorControlPage();
     void showLedControlPage();
+    void showMangoQualityPage();
     void refreshSensorData();
+    void refreshMangoQualityData();
     void readSensorMessages();
     void handleSensorFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void readMangoQualityMessages();
+    void handleMangoQualityFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void readCameraFrames();
     void readCameraMessages();
     void handleCameraFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -51,7 +93,6 @@ private slots:
     void updateLedAutoControl();
 
 private:
-    bool eventFilter(QObject *watched, QEvent *event) override;
     QWidget *createStartPage();
     QWidget *createWorkPage();
     QFrame *createVideoPanel();
@@ -60,12 +101,15 @@ private:
     QWidget *createFunctionHomePage();
     QWidget *createConveyorControlPage();
     QWidget *createLedControlPage();
+    QWidget *createMangoQualityPage();
     QLabel *makeSensorNameLabel(const QString &text);
     QLabel *makeSensorValueLabel();
     void applyGlobalStyle();
     void updateSensorCards(const SensorSnapshot &snapshot);
     void startSensorProcess();
     void stopSensorProcess();
+    void startMangoQualityProcess();
+    void stopMangoQualityProcess();
     void startCameraProcess();
     void stopCameraProcess();
     void processCameraBuffer();
@@ -80,13 +124,17 @@ private:
 
     QStackedWidget *m_pages;
     QStackedWidget *m_functionPages;
-    QLabel *m_videoStateLabel;
+    QFrame *m_videoPanel;
+    AspectRatioVideoFrame *m_videoSurface;
+    VideoDisplayWidget *m_videoDisplay;
     QLabel *m_sensorStatusLabel;
     QGridLayout *m_sensorGrid;
     QVector<QLabel *> m_sensorNameLabels;
     QVector<QLabel *> m_sensorValueLabels;
     QTimer *m_sensorTimer;
     QProcess *m_sensorProcess;
+    QTimer *m_mangoQualityTimer;
+    QProcess *m_mangoQualityProcess;
     QProcess *m_cameraProcess;
     QByteArray m_cameraBuffer;
     QPixmap m_latestFrame;
@@ -101,6 +149,14 @@ private:
     QLabel *m_ledStatusLabel;
     QPushButton *m_ledAutoButton;
     QTimer *m_ledAutoTimer;
+    QLabel *m_mangoMaturityValueLabel;
+    QLabel *m_mangoSugarValueLabel;
+    QLabel *m_mangoRotValueLabel;
+    QLabel *m_mangoFinalValueLabel;
+    QLabel *m_mangoYoloValueLabel;
+    QLabel *m_mangoDataValueLabel;
+    QLabel *m_mangoQualityStatusLabel;
+    QLabel *m_mangoReasonLabel;
     int m_conveyorDirection;
     int m_ledCurrentBrightness;
     bool m_ledAutoEnabled;

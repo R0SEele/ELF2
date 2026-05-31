@@ -1,6 +1,6 @@
 yolo11:
   # RKNN model path. / RKNN 模型路径。
-  model: /home/elf/projects/deeplearning/fruits1_yolo11_rk3588_i8.rknn
+  model: /home/elf/projects/deeplearning/mango_yolo11_rk3588_i8.rknn
   # Class label file, one label per line. / 类别标签文件，每行一个类别。
   labels: /home/elf/projects/deeplearning/yolo11_demo/labels.txt
   # Camera source: /dev/videoX, numeric index, or full pipeline string. / 摄像头来源：/dev/videoX、数字索引或完整管线字符串。

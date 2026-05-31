@@ -6,7 +6,10 @@
 #include <QFile>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QLayout>
+#include <QPainter>
 #include <QPixmap>
+#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QSpacerItem>
 #include <QTextStream>
@@ -16,9 +19,11 @@ namespace {
 const char *kSensorCsvDirectory = "/home/elf/projects/datas/csv";
 const char *kSensorCsvScript = "/home/elf/projects/src/hardware/sensors/csv_logger.py";
 const char *kCameraScript = "/home/elf/projects/deeplearning/yolo11_demo/camera_detect.py";
+const char *kMangoQualityScript = "/home/elf/projects/src/software/mango_quality/mango_quality_cli.py";
 const char *kMotorCommandScript = "/home/elf/projects/src/hardware/motor/conveyor_cli.py";
 const char *kLedCommandScript = "/home/elf/projects/src/hardware/led/ws2812b.py";
 const char *kSensorCsvFile = "/home/elf/projects/datas/csv/sensor_realtime.csv";
+const char *kMangoQualityCsvFile = "/home/elf/projects/datas/csv/mango_quality_realtime.csv";
 const int kSensorCardCount = 6;
 const int kFrameHeaderSize = 4;
 const int kMaxFrameBytes = 20 * 1024 * 1024;
@@ -42,17 +47,161 @@ QString defaultSensorName(int index)
 
     return QString("数据 %1").arg(index + 1);
 }
+
+class CompactStackedWidget : public QStackedWidget
+{
+public:
+    explicit CompactStackedWidget(QWidget *parent = nullptr)
+        : QStackedWidget(parent)
+    {
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(120, 120);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return QSize(0, 0);
+    }
+};
+}
+
+VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
+    : QWidget(parent),
+      m_message("视频画面\n等待接入检测程序")
+{
+    setObjectName("videoState");
+    setMinimumSize(180, 120);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void VideoDisplayWidget::setFrame(const QPixmap &frame)
+{
+    m_frame = frame;
+    m_message.clear();
+    update();
+}
+
+void VideoDisplayWidget::setMessage(const QString &message)
+{
+    m_frame = QPixmap();
+    m_message = message;
+    update();
+}
+
+void VideoDisplayWidget::clearFrame()
+{
+    m_frame = QPixmap();
+    update();
+}
+
+void VideoDisplayWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.fillRect(rect(), QColor("#142418"));
+
+    if (!m_frame.isNull()) {
+        const QSize targetSize = rect().size();
+        const QSize scaledSize = m_frame.size().scaled(targetSize, Qt::KeepAspectRatio);
+        const QRect target(
+            (width() - scaledSize.width()) / 2,
+            (height() - scaledSize.height()) / 2,
+            scaledSize.width(),
+            scaledSize.height()
+        );
+        painter.drawPixmap(target, m_frame);
+        return;
+    }
+
+    painter.setPen(QColor("#d7f5cf"));
+    QFont font = painter.font();
+    font.setPointSize(24);
+    font.setBold(true);
+    painter.setFont(font);
+    painter.drawText(rect().adjusted(16, 16, -16, -16), Qt::AlignCenter | Qt::TextWordWrap, m_message);
+}
+
+AspectRatioVideoFrame::AspectRatioVideoFrame(QWidget *parent)
+    : QFrame(parent),
+      m_content(nullptr),
+      m_aspectRatio(4.0 / 3.0)
+{
+    setObjectName("videoSurface");
+    setFrameShape(QFrame::NoFrame);
+    setMinimumSize(180, 120);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void AspectRatioVideoFrame::setContentWidget(QWidget *content)
+{
+    m_content = content;
+    if (m_content) {
+        m_content->setParent(this);
+        m_content->show();
+    }
+    updateContentGeometry();
+}
+
+void AspectRatioVideoFrame::setAspectRatioFromSize(const QSize &size)
+{
+    if (size.width() <= 0 || size.height() <= 0) {
+        return;
+    }
+
+    const double nextRatio = static_cast<double>(size.width()) / static_cast<double>(size.height());
+    if (qAbs(nextRatio - m_aspectRatio) < 0.001) {
+        return;
+    }
+
+    m_aspectRatio = nextRatio;
+    updateContentGeometry();
+}
+
+void AspectRatioVideoFrame::resizeEvent(QResizeEvent *event)
+{
+    QFrame::resizeEvent(event);
+    updateContentGeometry();
+}
+
+void AspectRatioVideoFrame::updateContentGeometry()
+{
+    if (!m_content || width() <= 0 || height() <= 0) {
+        return;
+    }
+
+    const int availableW = width();
+    const int availableH = height();
+    int contentW = availableW;
+    int contentH = static_cast<int>(contentW / m_aspectRatio);
+
+    if (contentH > availableH) {
+        contentH = availableH;
+        contentW = static_cast<int>(contentH * m_aspectRatio);
+    }
+
+    const int x = (availableW - contentW) / 2;
+    const int y = (availableH - contentH) / 2;
+    m_content->setGeometry(x, y, contentW, contentH);
 }
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
       m_pages(new QStackedWidget(this)),
       m_functionPages(nullptr),
-      m_videoStateLabel(nullptr),
+      m_videoPanel(nullptr),
+      m_videoSurface(nullptr),
+      m_videoDisplay(nullptr),
       m_sensorStatusLabel(nullptr),
       m_sensorGrid(nullptr),
       m_sensorTimer(new QTimer(this)),
       m_sensorProcess(new QProcess(this)),
+      m_mangoQualityTimer(new QTimer(this)),
+      m_mangoQualityProcess(new QProcess(this)),
       m_cameraProcess(new QProcess(this)),
       m_sensorReader(kSensorCsvFile),
       m_conveyorSpeedSlider(nullptr),
@@ -65,6 +214,14 @@ MainWindow::MainWindow(QWidget *parent)
       m_ledStatusLabel(nullptr),
       m_ledAutoButton(nullptr),
       m_ledAutoTimer(new QTimer(this)),
+      m_mangoMaturityValueLabel(nullptr),
+      m_mangoSugarValueLabel(nullptr),
+      m_mangoRotValueLabel(nullptr),
+      m_mangoFinalValueLabel(nullptr),
+      m_mangoYoloValueLabel(nullptr),
+      m_mangoDataValueLabel(nullptr),
+      m_mangoQualityStatusLabel(nullptr),
+      m_mangoReasonLabel(nullptr),
       m_conveyorDirection(0),
       m_ledCurrentBrightness(40),
       m_ledAutoEnabled(false),
@@ -73,7 +230,10 @@ MainWindow::MainWindow(QWidget *parent)
       m_shutdownDone(false)
 {
     setWindowTitle("水果端侧AI视觉质检系统");
+    setMinimumSize(0, 0);
     setCentralWidget(m_pages);
+    m_pages->setContentsMargins(0, 0, 0, 0);
+    m_pages->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     applyGlobalStyle();
 
     m_pages->addWidget(createStartPage());
@@ -82,12 +242,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_sensorTimer, &QTimer::timeout, this, &MainWindow::refreshSensorData);
     m_sensorTimer->setInterval(1000);
+    connect(m_mangoQualityTimer, &QTimer::timeout, this, &MainWindow::refreshMangoQualityData);
+    m_mangoQualityTimer->setInterval(1000);
 
     connect(m_sensorProcess, &QProcess::readyReadStandardError, this, &MainWindow::readSensorMessages);
     connect(m_sensorProcess,
             static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
             this,
             &MainWindow::handleSensorFinished);
+    connect(m_mangoQualityProcess, &QProcess::readyReadStandardError, this, &MainWindow::readMangoQualityMessages);
+    connect(m_mangoQualityProcess,
+            static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+            this,
+            &MainWindow::handleMangoQualityFinished);
 
     connect(m_cameraProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::readCameraFrames);
     connect(m_cameraProcess, &QProcess::readyReadStandardError, this, &MainWindow::readCameraMessages);
@@ -117,6 +284,8 @@ void MainWindow::shutdownHardware()
         turnLedOff();
     }
     stopConveyor();
+    m_mangoQualityTimer->stop();
+    stopMangoQualityProcess();
     stopSensorProcess();
     stopCameraProcess();
 }
@@ -130,6 +299,11 @@ void MainWindow::showWorkPage()
         m_sensorTimer->start();
     }
     startCameraProcess();
+    startMangoQualityProcess();
+    refreshMangoQualityData();
+    if (!m_mangoQualityTimer->isActive()) {
+        m_mangoQualityTimer->start();
+    }
 }
 
 void MainWindow::showStartPage()
@@ -161,9 +335,104 @@ void MainWindow::showLedControlPage()
     }
 }
 
+void MainWindow::showMangoQualityPage()
+{
+    if (m_functionPages) {
+        m_functionPages->setCurrentIndex(3);
+    }
+    startMangoQualityProcess();
+    refreshMangoQualityData();
+}
+
 void MainWindow::refreshSensorData()
 {
     updateSensorCards(m_sensorReader.readLatest());
+}
+
+void MainWindow::refreshMangoQualityData()
+{
+    if (!m_mangoMaturityValueLabel) {
+        return;
+    }
+
+    QFile file(kMangoQualityCsvFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        m_mangoMaturityValueLabel->setText("--");
+        m_mangoSugarValueLabel->setText("--");
+        m_mangoRotValueLabel->setText("--");
+        m_mangoFinalValueLabel->setText("--");
+        m_mangoYoloValueLabel->setText("--");
+        m_mangoDataValueLabel->setText("等待融合结果");
+        if (m_mangoQualityStatusLabel) {
+            m_mangoQualityStatusLabel->setText("状态：未读取到三模态融合结果");
+        }
+        if (m_mangoReasonLabel) {
+            m_mangoReasonLabel->setText("请确认YOLO检测、HSV/RGB特征与光谱采集已启动。");
+        }
+        return;
+    }
+
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    QString headerLine;
+    QString lastLine;
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        if (headerLine.isEmpty()) {
+            headerLine = line;
+        } else {
+            lastLine = line;
+        }
+    }
+
+    if (headerLine.isEmpty() || lastLine.isEmpty()) {
+        m_mangoDataValueLabel->setText("等待融合结果");
+        if (m_mangoQualityStatusLabel) {
+            m_mangoQualityStatusLabel->setText("状态：融合结果为空");
+        }
+        return;
+    }
+
+    const QStringList headers = parseCsvLine(headerLine);
+    const QStringList fields = parseCsvLine(lastLine);
+    auto valueFor = [&](const QString &key, const QString &fallback = QString("--")) {
+        const int index = headers.indexOf(key);
+        if (index < 0 || index >= fields.size()) {
+            return fallback;
+        }
+        const QString value = fields.at(index).trimmed();
+        return value.isEmpty() ? fallback : value;
+    };
+
+    const QString maturity = valueFor("maturity_label");
+    const QString maturityScore = valueFor("maturity_score", QString());
+    const QString sugar = valueFor("sugar_label");
+    const QString brixRange = valueFor("reference_brix_range", QString());
+    const QString rot = valueFor("rot_status");
+    const QString rotScore = valueFor("rot_score", QString());
+    const QString finalStatus = valueFor("final_status");
+    const QString yoloLabel = valueFor("yolo_label", "未检测到");
+    const QString yoloConfidence = valueFor("yolo_confidence", QString());
+    const QString dataStatus = valueFor("data_status", "等待数据");
+    const QString reason = valueFor("reason", "暂无说明");
+    const QString timestamp = valueFor("timestamp", QString());
+
+    m_mangoMaturityValueLabel->setText(maturityScore.isEmpty() ? maturity : QString("%1  %2分").arg(maturity, maturityScore));
+    m_mangoSugarValueLabel->setText(brixRange.isEmpty() ? sugar : QString("%1  %2").arg(sugar, brixRange));
+    m_mangoRotValueLabel->setText(rotScore.isEmpty() ? rot : QString("%1  %2分").arg(rot, rotScore));
+    m_mangoFinalValueLabel->setText(finalStatus);
+    m_mangoYoloValueLabel->setText(yoloConfidence.isEmpty() ? yoloLabel : QString("%1  置信度%2").arg(yoloLabel, yoloConfidence));
+    m_mangoDataValueLabel->setText(dataStatus);
+
+    if (m_mangoQualityStatusLabel) {
+        m_mangoQualityStatusLabel->setText(timestamp.isEmpty() ? "状态：三模态融合结果" : "状态：更新于 " + timestamp);
+    }
+    if (m_mangoReasonLabel) {
+        m_mangoReasonLabel->setText(reason);
+    }
 }
 
 void MainWindow::readSensorMessages()
@@ -184,6 +453,24 @@ void MainWindow::handleSensorFinished(int exitCode, QProcess::ExitStatus exitSta
         m_sensorStatusLabel->setText("环境数据");
     } else if (exitCode != 0) {
         m_sensorStatusLabel->setText("环境数据");
+    }
+}
+
+void MainWindow::readMangoQualityMessages()
+{
+    m_mangoQualityProcess->readAllStandardError();
+}
+
+void MainWindow::handleMangoQualityFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (!m_mangoQualityStatusLabel) {
+        return;
+    }
+
+    if (exitStatus == QProcess::CrashExit) {
+        m_mangoQualityStatusLabel->setText("状态：三模态融合程序异常退出");
+    } else if (exitCode != 0) {
+        m_mangoQualityStatusLabel->setText(QString("状态：三模态融合程序退出：%1").arg(exitCode));
     }
 }
 
@@ -216,19 +503,11 @@ void MainWindow::handleCameraFinished(int exitCode, QProcess::ExitStatus exitSta
     }
 }
 
-bool MainWindow::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == m_videoStateLabel && event->type() == QEvent::Resize) {
-        rescaleCameraFrame();
-    }
-
-    return QMainWindow::eventFilter(watched, event);
-}
-
 QWidget *MainWindow::createStartPage()
 {
     QWidget *page = new QWidget;
     page->setObjectName("startPage");
+    page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(70, 54, 70, 54);
@@ -258,18 +537,26 @@ QWidget *MainWindow::createWorkPage()
 {
     QWidget *page = new QWidget;
     page->setObjectName("workPage");
+    page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     QHBoxLayout *rootLayout = new QHBoxLayout(page);
-    rootLayout->setContentsMargins(12, 10, 12, 10);
-    rootLayout->setSpacing(12);
+    rootLayout->setContentsMargins(8, 8, 8, 8);
+    rootLayout->setSpacing(8);
+    rootLayout->setSizeConstraint(QLayout::SetNoConstraint);
 
     QVBoxLayout *leftLayout = new QVBoxLayout;
-    leftLayout->setSpacing(12);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(8);
     leftLayout->addWidget(createVideoPanel(), 5);
     leftLayout->addWidget(createSensorPanel(), 2);
 
     rootLayout->addLayout(leftLayout, 6);
-    rootLayout->addWidget(createFunctionPlaceholder(), 3);
+    QFrame *functionPanel = createFunctionPlaceholder();
+    functionPanel->setMinimumWidth(0);
+    functionPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    rootLayout->addWidget(functionPanel, 3);
+    rootLayout->setStretch(0, 6);
+    rootLayout->setStretch(1, 3);
 
     return page;
 }
@@ -277,32 +564,23 @@ QWidget *MainWindow::createWorkPage()
 QFrame *MainWindow::createVideoPanel()
 {
     QFrame *panel = new QFrame;
+    m_videoPanel = panel;
     panel->setObjectName("videoPanel");
     panel->setFrameShape(QFrame::NoFrame);
+    panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     QVBoxLayout *layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(16, 12, 16, 16);
-    layout->setSpacing(10);
+    layout->setContentsMargins(12, 8, 12, 10);
+    layout->setSpacing(6);
 
     QLabel *title = new QLabel("检测视频实时画面");
     title->setObjectName("panelTitle");
 
-    QFrame *videoSurface = new QFrame;
-    videoSurface->setObjectName("videoSurface");
-    videoSurface->setMinimumSize(460, 300);
-    videoSurface->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    AspectRatioVideoFrame *videoSurface = new AspectRatioVideoFrame;
+    m_videoSurface = videoSurface;
 
-    QVBoxLayout *surfaceLayout = new QVBoxLayout(videoSurface);
-    surfaceLayout->setContentsMargins(10, 10, 10, 10);
-
-    m_videoStateLabel = new QLabel("视频画面\n等待接入检测程序");
-    m_videoStateLabel->setObjectName("videoState");
-    m_videoStateLabel->setAlignment(Qt::AlignCenter);
-    m_videoStateLabel->setWordWrap(true);
-    m_videoStateLabel->setScaledContents(false);
-    m_videoStateLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_videoStateLabel->installEventFilter(this);
-    surfaceLayout->addWidget(m_videoStateLabel);
+    m_videoDisplay = new VideoDisplayWidget;
+    videoSurface->setContentWidget(m_videoDisplay);
 
     layout->addWidget(title);
     layout->addWidget(videoSurface, 1);
@@ -314,10 +592,11 @@ QFrame *MainWindow::createSensorPanel()
 {
     QFrame *panel = new QFrame;
     panel->setObjectName("sensorPanel");
+    panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     QVBoxLayout *layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(16, 10, 16, 12);
-    layout->setSpacing(8);
+    layout->setContentsMargins(12, 6, 12, 8);
+    layout->setSpacing(4);
 
     QHBoxLayout *header = new QHBoxLayout;
     QLabel *title = new QLabel("环境实时数据");
@@ -330,17 +609,17 @@ QFrame *MainWindow::createSensorPanel()
 
     m_sensorGrid = new QGridLayout;
     m_sensorGrid->setContentsMargins(0, 0, 0, 0);
-    m_sensorGrid->setHorizontalSpacing(10);
-    m_sensorGrid->setVerticalSpacing(8);
+    m_sensorGrid->setHorizontalSpacing(8);
+    m_sensorGrid->setVerticalSpacing(4);
 
     for (int i = 0; i < kSensorCardCount; ++i) {
         QFrame *card = new QFrame;
         card->setObjectName("sensorCard");
-        card->setMinimumHeight(64);
+        card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
         QVBoxLayout *cardLayout = new QVBoxLayout(card);
-        cardLayout->setContentsMargins(12, 6, 12, 6);
-        cardLayout->setSpacing(2);
+        cardLayout->setContentsMargins(10, 3, 10, 3);
+        cardLayout->setSpacing(0);
 
         QLabel *name = makeSensorNameLabel(defaultSensorName(i));
         QLabel *value = makeSensorValueLabel();
@@ -362,23 +641,28 @@ QFrame *MainWindow::createFunctionPlaceholder()
 {
     QFrame *panel = new QFrame;
     panel->setObjectName("functionPanel");
+    panel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     QVBoxLayout *layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(16, 14, 16, 14);
-    layout->setSpacing(12);
+    layout->setContentsMargins(12, 8, 12, 8);
+    layout->setSpacing(8);
 
     QLabel *title = new QLabel("功能控制");
     title->setObjectName("panelTitle");
 
     QPushButton *exitButton = new QPushButton("退出检测");
     exitButton->setObjectName("exitButton");
-    exitButton->setMinimumHeight(76);
+    exitButton->setMinimumHeight(0);
+    exitButton->setFixedHeight(58);
     connect(exitButton, &QPushButton::clicked, this, &MainWindow::showStartPage);
 
-    m_functionPages = new QStackedWidget(panel);
+    m_functionPages = new CompactStackedWidget(panel);
+    m_functionPages->setMinimumSize(0, 0);
+    m_functionPages->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     m_functionPages->addWidget(createFunctionHomePage());
     m_functionPages->addWidget(createConveyorControlPage());
     m_functionPages->addWidget(createLedControlPage());
+    m_functionPages->addWidget(createMangoQualityPage());
 
     layout->addWidget(title);
     layout->addWidget(m_functionPages, 1);
@@ -390,21 +674,29 @@ QFrame *MainWindow::createFunctionPlaceholder()
 QWidget *MainWindow::createFunctionHomePage()
 {
     QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(12);
 
     QPushButton *conveyorButton = new QPushButton("传送带调速控制");
     conveyorButton->setObjectName("featureButton");
-    conveyorButton->setMinimumHeight(92);
+    conveyorButton->setFixedHeight(72);
     conveyorButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(conveyorButton, &QPushButton::clicked, this, &MainWindow::showConveyorControlPage);
 
     QPushButton *ledButton = new QPushButton("LED亮度控制");
     ledButton->setObjectName("featureButton");
-    ledButton->setMinimumHeight(92);
+    ledButton->setFixedHeight(72);
     ledButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(ledButton, &QPushButton::clicked, this, &MainWindow::showLedControlPage);
+
+    QPushButton *mangoButton = new QPushButton("查看芒果状况");
+    mangoButton->setObjectName("featureButton");
+    mangoButton->setFixedHeight(72);
+    mangoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(mangoButton, &QPushButton::clicked, this, &MainWindow::showMangoQualityPage);
 
     QLabel *placeholder = new QLabel("功能区");
     placeholder->setObjectName("functionPlaceholder");
@@ -412,6 +704,7 @@ QWidget *MainWindow::createFunctionHomePage()
 
     layout->addWidget(conveyorButton);
     layout->addWidget(ledButton);
+    layout->addWidget(mangoButton);
     layout->addWidget(placeholder, 1);
     return page;
 }
@@ -419,6 +712,8 @@ QWidget *MainWindow::createFunctionHomePage()
 QWidget *MainWindow::createConveyorControlPage()
 {
     QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(12);
@@ -503,6 +798,8 @@ QWidget *MainWindow::createConveyorControlPage()
 QWidget *MainWindow::createLedControlPage()
 {
     QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(12);
@@ -612,6 +909,73 @@ QWidget *MainWindow::createLedControlPage()
     return page;
 }
 
+QWidget *MainWindow::createMangoQualityPage()
+{
+    QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QPushButton *backButton = new QPushButton("返回功能区");
+    backButton->setObjectName("secondaryButton");
+    backButton->setMinimumHeight(46);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
+
+    QLabel *title = new QLabel("芒果状况");
+    title->setObjectName("controlTitle");
+
+    auto makeRow = [](const QString &name, QLabel **valueLabel) {
+        QFrame *row = new QFrame;
+        row->setObjectName("qualityRow");
+        row->setMinimumHeight(52);
+        QHBoxLayout *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(12, 6, 12, 6);
+        rowLayout->setSpacing(8);
+
+        QLabel *nameLabel = new QLabel(name);
+        nameLabel->setObjectName("qualityName");
+        nameLabel->setMinimumWidth(92);
+
+        QLabel *value = new QLabel("--");
+        value->setObjectName("qualityValue");
+        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        value->setWordWrap(true);
+
+        rowLayout->addWidget(nameLabel);
+        rowLayout->addWidget(value, 1);
+        *valueLabel = value;
+        return row;
+    };
+
+    layout->addWidget(backButton);
+    layout->addWidget(title);
+    layout->addWidget(makeRow("成熟度", &m_mangoMaturityValueLabel));
+    layout->addWidget(makeRow("参考糖度", &m_mangoSugarValueLabel));
+    layout->addWidget(makeRow("腐烂状况", &m_mangoRotValueLabel));
+    layout->addWidget(makeRow("综合结论", &m_mangoFinalValueLabel));
+    layout->addWidget(makeRow("YOLO结果", &m_mangoYoloValueLabel));
+    layout->addWidget(makeRow("数据状态", &m_mangoDataValueLabel));
+
+    m_mangoQualityStatusLabel = new QLabel("状态：等待三模态融合结果");
+    m_mangoQualityStatusLabel->setObjectName("motorStatus");
+    m_mangoQualityStatusLabel->setWordWrap(true);
+
+    m_mangoReasonLabel = new QLabel("暂无说明");
+    m_mangoReasonLabel->setObjectName("qualityReason");
+    m_mangoReasonLabel->setWordWrap(true);
+    m_mangoReasonLabel->setMinimumHeight(64);
+    m_mangoReasonLabel->setMaximumHeight(104);
+    m_mangoReasonLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+
+    layout->addWidget(m_mangoQualityStatusLabel);
+    layout->addWidget(m_mangoReasonLabel);
+    layout->addStretch(1);
+
+    return page;
+}
+
 QLabel *MainWindow::makeSensorNameLabel(const QString &text)
 {
     QLabel *label = new QLabel(text);
@@ -625,7 +989,6 @@ QLabel *MainWindow::makeSensorValueLabel()
     QLabel *label = new QLabel("--");
     label->setObjectName("sensorValue");
     label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    label->setMinimumHeight(32);
     return label;
 }
 
@@ -660,9 +1023,9 @@ void MainWindow::applyGlobalStyle()
         "  color: #1f5a31;"
         "  border: 2px solid #72bd78;"
         "  border-radius: 8px;"
-        "  font-size: 26px;"
+        "  font-size: 22px;"
         "  font-weight: 700;"
-        "  padding: 14px;"
+        "  padding: 8px;"
         "}"
         "QPushButton#exitButton:pressed {"
         "  background: #d7f0cc;"
@@ -672,9 +1035,9 @@ void MainWindow::applyGlobalStyle()
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
-        "  font-size: 24px;"
+        "  font-size: 22px;"
         "  font-weight: 700;"
-        "  padding: 14px;"
+        "  padding: 8px;"
         "}"
         "QPushButton#featureButton:pressed {"
         "  background: #4a9b55;"
@@ -718,7 +1081,7 @@ void MainWindow::applyGlobalStyle()
         "  border-radius: 8px;"
         "}"
         "QLabel#panelTitle {"
-        "  font-size: 24px;"
+        "  font-size: 22px;"
         "  font-weight: 700;"
         "  color: #1f5a31;"
         "}"
@@ -727,7 +1090,7 @@ void MainWindow::applyGlobalStyle()
         "  border: 3px solid #72bd78;"
         "  border-radius: 6px;"
         "}"
-        "QLabel#videoState {"
+        "QWidget#videoState {"
         "  color: #d7f5cf;"
         "  font-size: 28px;"
         "  font-weight: 700;"
@@ -742,11 +1105,11 @@ void MainWindow::applyGlobalStyle()
         "  border-radius: 7px;"
         "}"
         "QLabel#sensorName {"
-        "  font-size: 18px;"
+        "  font-size: 15px;"
         "  color: #46734d;"
         "}"
         "QLabel#sensorValue {"
-        "  font-size: 26px;"
+        "  font-size: 21px;"
         "  font-weight: 700;"
         "  color: #123f20;"
         "}"
@@ -780,6 +1143,26 @@ void MainWindow::applyGlobalStyle()
         "QLabel#motorStatus {"
         "  color: #4b7654;"
         "  font-size: 18px;"
+        "}"
+        "QFrame#qualityRow {"
+        "  background: #e2f4d5;"
+        "  border: 1px solid #95cb90;"
+        "  border-radius: 7px;"
+        "}"
+        "QLabel#qualityName {"
+        "  color: #46734d;"
+        "  font-size: 17px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#qualityValue {"
+        "  color: #123f20;"
+        "  font-size: 19px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#qualityReason {"
+        "  color: #4b7654;"
+        "  font-size: 16px;"
+        "  line-height: 140%;"
         "}"
         "QSlider#speedSlider::groove:horizontal {"
         "  height: 10px;"
@@ -845,6 +1228,38 @@ void MainWindow::stopSensorProcess()
     if (!m_sensorProcess->waitForFinished(1500)) {
         m_sensorProcess->kill();
         m_sensorProcess->waitForFinished(1000);
+    }
+}
+
+void MainWindow::startMangoQualityProcess()
+{
+    if (m_mangoQualityProcess->state() != QProcess::NotRunning) {
+        return;
+    }
+
+    QStringList args;
+    args << kMangoQualityScript
+         << "--interval" << "0.5"
+         << "--parent-pid" << QString::number(QCoreApplication::applicationPid());
+
+    m_mangoQualityProcess->setWorkingDirectory("/home/elf/projects");
+    m_mangoQualityProcess->start("python3", args);
+
+    if (!m_mangoQualityProcess->waitForStarted(1000) && m_mangoQualityStatusLabel) {
+        m_mangoQualityStatusLabel->setText("状态：三模态融合程序启动失败");
+    }
+}
+
+void MainWindow::stopMangoQualityProcess()
+{
+    if (m_mangoQualityProcess->state() == QProcess::NotRunning) {
+        return;
+    }
+
+    m_mangoQualityProcess->terminate();
+    if (!m_mangoQualityProcess->waitForFinished(1500)) {
+        m_mangoQualityProcess->kill();
+        m_mangoQualityProcess->waitForFinished(1000);
     }
 }
 
@@ -924,34 +1339,28 @@ void MainWindow::showCameraFrame(const QByteArray &jpegData)
     }
 
     m_latestFrame = frame;
+    if (m_videoSurface) {
+        m_videoSurface->setAspectRatioFromSize(frame.size());
+    }
     rescaleCameraFrame();
 }
 
 void MainWindow::rescaleCameraFrame()
 {
-    if (!m_videoStateLabel || m_latestFrame.isNull()) {
+    if (!m_videoDisplay || m_latestFrame.isNull()) {
         return;
     }
 
-    const QSize targetSize = m_videoStateLabel->contentsRect().size();
-    if (targetSize.isEmpty()) {
-        return;
-    }
-
-    m_videoStateLabel->setText(QString());
-    m_videoStateLabel->setPixmap(
-        m_latestFrame.scaled(targetSize, Qt::KeepAspectRatio, Qt::SmoothTransformation)
-    );
+    m_videoDisplay->setFrame(m_latestFrame);
 }
 
 void MainWindow::setVideoMessage(const QString &message)
 {
-    if (!m_videoStateLabel) {
+    if (!m_videoDisplay) {
         return;
     }
 
-    m_videoStateLabel->setPixmap(QPixmap());
-    m_videoStateLabel->setText(message);
+    m_videoDisplay->setMessage(message);
 }
 
 double MainWindow::currentConveyorSpeed() const

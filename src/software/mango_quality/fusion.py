@@ -467,12 +467,17 @@ def rot_score(vision, spectrum):
     if vision is not None and vision.label_key == "overripe":
         overripe_signal = vision.confidence * 100.0
 
+    dark_weight = 0.45 if vision is not None and not is_nan(vision.dark_spot_ratio) else 0.15
+    brown_weight = 0.25 if vision is not None and not is_nan(vision.brown_area_ratio) else 0.35
+    overripe_weight = 0.25 if overripe_signal > 0 else 0.0
+    spectrum_weight = 0.15 if spectrum is not None else 0.0
+
     return weighted_average(
         [
-            (estimate_dark_score(vision), 0.45),
-            (estimate_brown_score(vision), 0.25),
-            (overripe_signal, 0.20 if overripe_signal > 0 else 0.0),
-            (spectrum_abnormal_score(spectrum), 0.10),
+            (estimate_dark_score(vision), dark_weight),
+            (estimate_brown_score(vision), brown_weight),
+            (overripe_signal, overripe_weight),
+            (spectrum_abnormal_score(spectrum), spectrum_weight),
         ]
     )
 

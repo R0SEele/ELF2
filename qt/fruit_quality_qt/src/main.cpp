@@ -2,6 +2,8 @@
 
 #include <QApplication>
 #include <QFont>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QSocketNotifier>
 
 #include <csignal>
@@ -39,6 +41,10 @@ int main(int argc, char *argv[])
     app.setFont(appFont);
 
     MainWindow window;
+    window.setWindowFlags(window.windowFlags() | Qt::FramelessWindowHint);
+    if (QScreen *screen = QGuiApplication::primaryScreen()) {
+        window.setGeometry(screen->availableGeometry());
+    }
     window.showFullScreen();
 
     QSocketNotifier *signalNotifier = nullptr;

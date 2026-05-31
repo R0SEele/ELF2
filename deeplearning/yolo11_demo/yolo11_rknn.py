@@ -1,8 +1,19 @@
+from pathlib import Path
+import sys
+
 import cv2
 import numpy as np
 
 
 DEFAULT_IMG_SIZE = 640
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from src.software.mango_quality.color_features import extract_mango_color_features_from_bgr_roi
+except ImportError:
+    extract_mango_color_features_from_bgr_roi = None
 
 
 def load_labels(path, class_count=None):
@@ -407,9 +418,24 @@ def extract_color_features(image, boxes, class_ids, scores, labels):
         if roi.size == 0:
             continue
 
-        b_mean, g_mean, r_mean = roi.reshape(-1, 3).mean(axis=0)
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        h_mean, s_mean, v_mean = hsv.reshape(-1, 3).mean(axis=0)
+        if extract_mango_color_features_from_bgr_roi is not None:
+            color_features = extract_mango_color_features_from_bgr_roi(roi)
+        else:
+            b_mean, g_mean, r_mean = roi.reshape(-1, 3).mean(axis=0)
+            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+            h_mean, s_mean, v_mean = hsv.reshape(-1, 3).mean(axis=0)
+            color_features = {
+                "rgb_r_mean": float(r_mean),
+                "rgb_g_mean": float(g_mean),
+                "rgb_b_mean": float(b_mean),
+                "hsv_h_mean_deg": float(h_mean) * 2.0,
+                "hsv_s_mean_pct": float(s_mean) * 100.0 / 255.0,
+                "hsv_v_mean_pct": float(v_mean) * 100.0 / 255.0,
+                "green_ratio": 0.0,
+                "yellow_orange_ratio": 0.0,
+                "dark_spot_ratio": 0.0,
+                "brown_area_ratio": 0.0,
+            }
 
         features.append(
             {
@@ -421,12 +447,7 @@ def extract_color_features(image, boxes, class_ids, scores, labels):
                 "x2": int(x2),
                 "y2": int(y2),
                 "area_px": int((x2 - x1 + 1) * (y2 - y1 + 1)),
-                "rgb_r_mean": float(r_mean),
-                "rgb_g_mean": float(g_mean),
-                "rgb_b_mean": float(b_mean),
-                "hsv_h_mean_deg": float(h_mean) * 2.0,
-                "hsv_s_mean_pct": float(s_mean) * 100.0 / 255.0,
-                "hsv_v_mean_pct": float(v_mean) * 100.0 / 255.0,
+                **color_features,
             }
         )
 
@@ -487,4 +508,5 @@ class YOLO11RKNNDetector:
             self.labels = make_default_labels(class_count)
 
         color_features = extract_color_features(frame, boxes, class_ids, scores, self.labels)
-        return draw_detections(frame, boxes, class_ids, scores, self.labels), len(scores), color_features
+        annotated = frame.copy()
+        return draw_detections(annotated, boxes, class_ids, scores, self.labels), len(scores), color_features
