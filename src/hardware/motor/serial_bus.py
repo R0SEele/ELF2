@@ -64,7 +64,13 @@ class UARTBus:
 
             return bytes(data)
 
-    def exchange_min(self, req: bytes, min_size: int, read_timeout_s: float | None = None) -> bytes:
+    def exchange_min(
+        self,
+        req: bytes,
+        min_size: int,
+        read_timeout_s: float | None = None,
+        strip_echo: bool = True,
+    ) -> bytes:
         with self._lock:
             if not self._ser.is_open:
                 raise SerialBusError("serial port is closed")
@@ -92,6 +98,9 @@ class UARTBus:
                             time.sleep(0.001)
                     break
                 time.sleep(0.001)
+
+            if strip_echo and data.startswith(req):
+                data = data[len(req):]
 
             if len(data) < min_size:
                 raise SerialBusError(f"read timeout: min_expect={min_size}, got={len(data)}")

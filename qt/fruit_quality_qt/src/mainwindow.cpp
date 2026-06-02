@@ -22,13 +22,13 @@ const char *kCameraScript = "/home/elf/projects/deeplearning/yolo11_demo/camera_
 const char *kMangoQualityScript = "/home/elf/projects/src/software/mango_quality/mango_quality_cli.py";
 const char *kMotorCommandScript = "/home/elf/projects/src/hardware/motor/conveyor_cli.py";
 const char *kLedCommandScript = "/home/elf/projects/src/hardware/led/ws2812b.py";
+const char *kServoCommandScript = "/home/elf/projects/src/hardware/servo/sorter.py";
+const char *kMotorConfigFile = "/home/elf/projects/config/motor.yaml";
 const char *kSensorCsvFile = "/home/elf/projects/datas/csv/sensor_realtime.csv";
 const char *kMangoQualityCsvFile = "/home/elf/projects/datas/csv/mango_quality_realtime.csv";
 const int kSensorCardCount = 6;
 const int kFrameHeaderSize = 4;
 const int kMaxFrameBytes = 20 * 1024 * 1024;
-const int kConveyorMinSpeedX10 = 1;
-const int kConveyorMaxSpeedX10 = 5;
 
 QString defaultSensorName(int index)
 {
@@ -222,7 +222,11 @@ MainWindow::MainWindow(QWidget *parent)
       m_mangoDataValueLabel(nullptr),
       m_mangoQualityStatusLabel(nullptr),
       m_mangoReasonLabel(nullptr),
+      m_servoStatusLabel(nullptr),
       m_conveyorDirection(0),
+      m_conveyorMinSpeedX10(1),
+      m_conveyorMaxSpeedX10(10),
+      m_conveyorDefaultSpeedX10(5),
       m_ledCurrentBrightness(40),
       m_ledAutoEnabled(false),
       m_ledWasStarted(false),
@@ -234,6 +238,7 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(m_pages);
     m_pages->setContentsMargins(0, 0, 0, 0);
     m_pages->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    loadConveyorSpeedRange();
     applyGlobalStyle();
 
     m_pages->addWidget(createStartPage());
@@ -342,6 +347,13 @@ void MainWindow::showMangoQualityPage()
     }
     startMangoQualityProcess();
     refreshMangoQualityData();
+}
+
+void MainWindow::showServoControlPage()
+{
+    if (m_functionPages) {
+        m_functionPages->setCurrentIndex(4);
+    }
 }
 
 void MainWindow::refreshSensorData()
@@ -663,6 +675,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
     m_functionPages->addWidget(createConveyorControlPage());
     m_functionPages->addWidget(createLedControlPage());
     m_functionPages->addWidget(createMangoQualityPage());
+    m_functionPages->addWidget(createServoControlPage());
 
     layout->addWidget(title);
     layout->addWidget(m_functionPages, 1);
@@ -682,21 +695,27 @@ QWidget *MainWindow::createFunctionHomePage()
 
     QPushButton *conveyorButton = new QPushButton("传送带调速控制");
     conveyorButton->setObjectName("featureButton");
-    conveyorButton->setFixedHeight(72);
+    conveyorButton->setFixedHeight(62);
     conveyorButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(conveyorButton, &QPushButton::clicked, this, &MainWindow::showConveyorControlPage);
 
     QPushButton *ledButton = new QPushButton("LED亮度控制");
     ledButton->setObjectName("featureButton");
-    ledButton->setFixedHeight(72);
+    ledButton->setFixedHeight(62);
     ledButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(ledButton, &QPushButton::clicked, this, &MainWindow::showLedControlPage);
 
     QPushButton *mangoButton = new QPushButton("查看芒果状况");
     mangoButton->setObjectName("featureButton");
-    mangoButton->setFixedHeight(72);
+    mangoButton->setFixedHeight(62);
     mangoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(mangoButton, &QPushButton::clicked, this, &MainWindow::showMangoQualityPage);
+
+    QPushButton *servoButton = new QPushButton("舵机旋转控制");
+    servoButton->setObjectName("featureButton");
+    servoButton->setFixedHeight(62);
+    servoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(servoButton, &QPushButton::clicked, this, &MainWindow::showServoControlPage);
 
     QLabel *placeholder = new QLabel("功能区");
     placeholder->setObjectName("functionPlaceholder");
@@ -705,6 +724,7 @@ QWidget *MainWindow::createFunctionHomePage()
     layout->addWidget(conveyorButton);
     layout->addWidget(ledButton);
     layout->addWidget(mangoButton);
+    layout->addWidget(servoButton);
     layout->addWidget(placeholder, 1);
     return page;
 }
@@ -744,12 +764,12 @@ QWidget *MainWindow::createConveyorControlPage()
 
     m_conveyorSpeedSlider = new QSlider(Qt::Horizontal);
     m_conveyorSpeedSlider->setObjectName("speedSlider");
-    m_conveyorSpeedSlider->setRange(kConveyorMinSpeedX10, kConveyorMaxSpeedX10);
+    m_conveyorSpeedSlider->setRange(m_conveyorMinSpeedX10, m_conveyorMaxSpeedX10);
     m_conveyorSpeedSlider->setSingleStep(1);
     m_conveyorSpeedSlider->setPageStep(1);
     m_conveyorSpeedSlider->setTickPosition(QSlider::TicksBelow);
     m_conveyorSpeedSlider->setTickInterval(1);
-    m_conveyorSpeedSlider->setValue(3);
+    m_conveyorSpeedSlider->setValue(m_conveyorDefaultSpeedX10);
     connect(m_conveyorSpeedSlider, &QSlider::valueChanged, this, &MainWindow::updateConveyorSpeedLabel);
     connect(m_conveyorSpeedSlider, &QSlider::sliderReleased, this, &MainWindow::applyConveyorSpeed);
 
@@ -971,6 +991,59 @@ QWidget *MainWindow::createMangoQualityPage()
 
     layout->addWidget(m_mangoQualityStatusLabel);
     layout->addWidget(m_mangoReasonLabel);
+    layout->addStretch(1);
+
+    return page;
+}
+
+QWidget *MainWindow::createServoControlPage()
+{
+    QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QPushButton *backButton = new QPushButton("返回功能区");
+    backButton->setObjectName("secondaryButton");
+    backButton->setMinimumHeight(46);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
+
+    QLabel *title = new QLabel("舵机旋转控制");
+    title->setObjectName("controlTitle");
+
+    QLabel *description = new QLabel("1号：-45度    2号：0度    3号：45度");
+    description->setObjectName("motorStatus");
+    description->setWordWrap(true);
+
+    QPushButton *position1Button = new QPushButton("1号  -45度");
+    position1Button->setObjectName("runButton");
+    position1Button->setMinimumHeight(58);
+    connect(position1Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition1);
+
+    QPushButton *position2Button = new QPushButton("2号  0度");
+    position2Button->setObjectName("runButton");
+    position2Button->setMinimumHeight(58);
+    connect(position2Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition2);
+
+    QPushButton *position3Button = new QPushButton("3号  45度");
+    position3Button->setObjectName("runButton");
+    position3Button->setMinimumHeight(58);
+    connect(position3Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition3);
+
+    m_servoStatusLabel = new QLabel("状态：等待舵机指令");
+    m_servoStatusLabel->setObjectName("motorStatus");
+    m_servoStatusLabel->setWordWrap(true);
+    m_servoStatusLabel->setMinimumHeight(56);
+
+    layout->addWidget(backButton);
+    layout->addWidget(title);
+    layout->addWidget(description);
+    layout->addWidget(position1Button);
+    layout->addWidget(position2Button);
+    layout->addWidget(position3Button);
+    layout->addWidget(m_servoStatusLabel);
     layout->addStretch(1);
 
     return page;
@@ -1455,6 +1528,135 @@ void MainWindow::runMotorCommand(const QString &command)
     } else {
         const QString message = !error.isEmpty() ? error : output;
         m_motorStatusLabel->setText("状态：命令失败 " + message.left(80));
+    }
+}
+
+void MainWindow::loadConveyorSpeedRange()
+{
+    QFile file(kMotorConfigFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
+    }
+
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    bool inConveyorSection = false;
+    double minSpeed = m_conveyorMinSpeedX10 / 10.0;
+    double maxSpeed = m_conveyorMaxSpeedX10 / 10.0;
+    double defaultSpeed = m_conveyorDefaultSpeedX10 / 10.0;
+
+    while (!stream.atEnd()) {
+        const QString rawLine = stream.readLine();
+        const QString trimmed = rawLine.trimmed();
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+            continue;
+        }
+
+        const int indent = rawLine.size() - rawLine.trimmed().size();
+        if (indent == 2 && trimmed == "conveyor:") {
+            inConveyorSection = true;
+            continue;
+        }
+        if (inConveyorSection && indent <= 2 && trimmed.endsWith(":")) {
+            break;
+        }
+        if (!inConveyorSection || indent < 4) {
+            continue;
+        }
+
+        const int colon = trimmed.indexOf(':');
+        if (colon <= 0) {
+            continue;
+        }
+
+        const QString key = trimmed.left(colon).trimmed();
+        QString value = trimmed.mid(colon + 1).trimmed();
+        const int comment = value.indexOf('#');
+        if (comment >= 0) {
+            value = value.left(comment).trimmed();
+        }
+
+        bool ok = false;
+        const double number = value.toDouble(&ok);
+        if (!ok) {
+            continue;
+        }
+
+        if (key == "min_speed_ms") {
+            minSpeed = number;
+        } else if (key == "max_speed_ms") {
+            maxSpeed = number;
+        } else if (key == "default_speed_ms") {
+            defaultSpeed = number;
+        }
+    }
+
+    if (minSpeed <= 0.0 || maxSpeed <= minSpeed) {
+        return;
+    }
+
+    m_conveyorMinSpeedX10 = qMax(1, static_cast<int>(qRound(minSpeed * 10.0)));
+    m_conveyorMaxSpeedX10 = qMax(m_conveyorMinSpeedX10, static_cast<int>(qRound(maxSpeed * 10.0)));
+    m_conveyorDefaultSpeedX10 = static_cast<int>(qRound(defaultSpeed * 10.0));
+    m_conveyorDefaultSpeedX10 = qMax(m_conveyorMinSpeedX10, qMin(m_conveyorMaxSpeedX10, m_conveyorDefaultSpeedX10));
+}
+
+void MainWindow::moveServoToPosition1()
+{
+    runServoCommand("1", "1号 -45度");
+}
+
+void MainWindow::moveServoToPosition2()
+{
+    runServoCommand("2", "2号 0度");
+}
+
+void MainWindow::moveServoToPosition3()
+{
+    runServoCommand("3", "3号 45度");
+}
+
+void MainWindow::runServoCommand(const QString &position, const QString &label)
+{
+    if (m_servoStatusLabel) {
+        m_servoStatusLabel->setText("状态：正在旋转到 " + label);
+    }
+
+    QStringList args;
+    args << kServoCommandScript << position;
+
+    QProcess process;
+    process.setWorkingDirectory("/home/elf/projects");
+    process.start("python3", args);
+    if (!process.waitForStarted(1000)) {
+        if (m_servoStatusLabel) {
+            m_servoStatusLabel->setText("状态：舵机命令启动失败");
+        }
+        return;
+    }
+
+    process.waitForFinished(4000);
+    const QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
+    const QString error = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+
+    if (process.state() != QProcess::NotRunning) {
+        process.kill();
+        process.waitForFinished(500);
+        if (m_servoStatusLabel) {
+            m_servoStatusLabel->setText("状态：舵机命令超时");
+        }
+        return;
+    }
+
+    if (!m_servoStatusLabel) {
+        return;
+    }
+
+    if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
+        m_servoStatusLabel->setText(output.isEmpty() ? "状态：已旋转到 " + label : "状态：" + output);
+    } else {
+        const QString message = !error.isEmpty() ? error : output;
+        m_servoStatusLabel->setText("状态：舵机命令失败 " + message.left(140));
     }
 }
 

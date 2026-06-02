@@ -76,6 +76,7 @@ def main():
 
     addr = _to_int_addr(driver_cfg.get("address", "0x01"))
     sync = int(driver_cfg.get("sync", 0))
+    protocol_variant = str(driver_cfg.get("protocol", "zdt_v2"))
 
     speed_rpm = float(kctrl_cfg.get("default_speed_rpm", 100.0))
     speed_step_rpm = float(kctrl_cfg.get("speed_step_rpm", 10.0))
@@ -90,6 +91,7 @@ def main():
 
     ctrl = ZDTMotorController(
         address=addr,
+        protocol_variant=protocol_variant,
         serial_config=SerialConfig(
             port=port,
             baudrate=baudrate,
@@ -101,7 +103,7 @@ def main():
     print("Keyboard motor control started")
     print("keys: q=forward, e=reverse, 1=speed-, 2=speed+, space=estop, x=exit, Ctrl+C=exit")
     print(f"speed={speed_rpm:.1f} rpm, accel={accel}, addr=0x{addr:02X}, port={port}")
-    print(f"wait_ack={wait_ack}")
+    print(f"protocol={protocol_variant}, wait_ack={wait_ack}")
 
     try:
         ctrl.enable(True, sync=sync, wait_ack=wait_ack)

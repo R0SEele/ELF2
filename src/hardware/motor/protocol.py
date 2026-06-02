@@ -20,7 +20,7 @@ class Frame:
 
 
 class ZDTV2Protocol:
-    """ZDT_X 串口协议（单字节地址 + 固定尾字节 0x6B）。"""
+    """ZDT_X/Emm 串口协议（单字节地址 + 固定尾字节 0x6B）。"""
 
     CMD_READ_VERSION = 0x1F
     CMD_READ_ENCODER_RAW = 0x30
@@ -33,8 +33,9 @@ class ZDTV2Protocol:
     CMD_POS_MODE = 0xFD
     CMD_STOP = 0xFE
 
-    def __init__(self, tail: int = 0x6B):
+    def __init__(self, tail: int = 0x6B, variant: str = "zdt_v2"):
         self.tail = tail & 0xFF
+        self.variant = variant
 
     def pack(self, address: int, command: int, payload: bytes = b"") -> bytes:
         return Frame(address=address, command=command, payload=payload, tail=self.tail).to_bytes()
@@ -121,7 +122,41 @@ class ZDTV2Protocol:
         accel: int = 10,
         sync: int = 0x00,
     ) -> bytes:
-        # 地址 + F6 + 方向 + 速度u16(RPM) + 加速度u8 + 同步标志 + 6B
+        if self.variant == "emm_v5":
+            return self._cmd_speed_mode_emm_v5(address, direction, speed_rpm, accel, sync)
+        return self._cmd_speed_mode_zdt_v2(address, direction, speed_rpm, accel, sync)
+
+    def _cmd_speed_mode_zdt_v2(
+        self,
+        address: int,
+        direction: int,
+        speed_rpm: float,
+        accel: int,
+        sync: int,
+    ) -> bytes:
+        # ZDT_X V2：地址 + F6 + 符号 + 速度斜率u16(RPM/s) + 速度u16(0.1RPM) + 同步标志 + 6B
+        if accel < 0 or accel > 0xFFFF:
+            raise ProtocolError(f"speed slope out of range: {accel}")
+        speed_x10 = int(round(abs(speed_rpm) * 10.0))
+        if speed_x10 > 0xFFFF:
+            raise ProtocolError(f"speed out of range: {speed_rpm}")
+        payload = (
+            bytes([direction & 0x01])
+            + int(accel).to_bytes(2, "big")
+            + speed_x10.to_bytes(2, "big")
+            + bytes([sync & 0xFF])
+        )
+        return self.pack(address, self.CMD_SPEED_MODE, payload)
+
+    def _cmd_speed_mode_emm_v5(
+        self,
+        address: int,
+        direction: int,
+        speed_rpm: float,
+        accel: int,
+        sync: int,
+    ) -> bytes:
+        # Emm_V5：地址 + F6 + 方向 + 速度u16(RPM) + 加速度u8 + 同步标志 + 6B
         if accel < 0 or accel > 0xFF:
             raise ProtocolError(f"accel out of range: {accel}")
         speed_u16 = int(round(abs(speed_rpm)))
@@ -145,11 +180,11 @@ class ZDTV2Protocol:
         absolute: bool,
         sync: int = 0x00,
     ) -> bytes:
-        # 地址 + FD + 方向 + 速度u16 + 加速度u8 + 脉冲u32 + 相对/绝对 + 同步 + 6B
+        # 地址 + FD + 方向 + 速度u16 + 加速度u16 + 脉冲u32 + 相对/绝对 + 同步 + 6B
         speed_u16 = int(round(abs(speed_rpm)))
         if speed_u16 < 0 or speed_u16 > 0xFFFF:
             raise ProtocolError(f"speed out of range: {speed_rpm}")
-        if accel < 0 or accel > 0xFF:
+        if accel < 0 or accel > 0xFFFF:
             raise ProtocolError(f"accel out of range: {accel}")
         if pulses < 0 or pulses > 0xFFFFFFFF:
             raise ProtocolError(f"pulses out of range: {pulses}")
@@ -157,7 +192,7 @@ class ZDTV2Protocol:
         payload = (
             bytes([direction & 0x01])
             + speed_u16.to_bytes(2, "big")
-            + bytes([accel & 0xFF])
+            + int(accel).to_bytes(2, "big")
             + pulses.to_bytes(4, "big")
             + bytes([rel_abs, sync & 0xFF])
         )

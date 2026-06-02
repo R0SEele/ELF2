@@ -76,7 +76,7 @@ def _build_row(readings):
         "humidity_rh": _fmt(humidity_rh),
         "co2_ppm": _fmt(scd40.get("co2_ppm") if scd40.get("ok") else None, digits=0),
         "light_lux": _fmt(gy302.get("lux") if gy302.get("ok") else None),
-        "air_quality_ppm": _fmt(mq135.get("ppm_est") if mq135.get("ok") else None),
+        "air_quality_ppm": _fmt(mq135.get("level_pct") if mq135.get("ok") else None),
         "env_status": "正常" if not errors else "部分异常",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "sensor_errors": "; ".join(errors),

@@ -17,14 +17,20 @@ class MotorControllerError(Exception):
 @dataclass
 class MotorLimits:
     max_speed_rpm: float = 3000.0
-    max_accel: int = 255
+    max_accel: int = 0xFFFF
     pulses_per_rev: int = 3200
 
 
 class ZDTMotorController:
-    def __init__(self, address: int = 0x01, serial_config: SerialConfig | None = None, limits: MotorLimits | None = None):
+    def __init__(
+        self,
+        address: int = 0x01,
+        serial_config: SerialConfig | None = None,
+        limits: MotorLimits | None = None,
+        protocol_variant: str = "zdt_v2",
+    ):
         self.address = address & 0xFF
-        self.protocol = ZDTV2Protocol()
+        self.protocol = ZDTV2Protocol(variant=protocol_variant)
         self.bus = UARTBus(serial_config or SerialConfig())
         self.limits = limits or MotorLimits()
 

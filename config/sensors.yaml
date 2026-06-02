@@ -26,8 +26,8 @@ sensors:
     warmup_s: 5.0
     # Max retries when transfer/read fails. / 传输或读取失败时的最大重试次数。
     max_retries: 3
-    # Timeout waiting data-ready flag. / 等待数据就绪标志的超时时间。
-    ready_timeout_s: 2.0
+    # Timeout waiting data-ready flag. SCD40 produces fresh data about every 5 s.
+    ready_timeout_s: 6.0
     # Poll interval while waiting data-ready flag. / 等待数据就绪标志时的轮询间隔。
     poll_interval_s: 0.2
 
@@ -98,6 +98,7 @@ sensors:
     iio_device: "iio:device0"
     # ADC/IIO channel index, VIN4 for MQ-135. / ADC/IIO 通道索引，MQ-135 使用 VIN4。
     channel: 4
+    # Qt displays the raw relative level (%) because ppm requires board calibration.
     # Number of samples to average. Use 0 for single-shot. / 平均采样次数；0 表示单次采样。
     sample_count: 0
     # Interval between periodic reads. / 周期读取间隔。

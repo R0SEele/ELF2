@@ -7,6 +7,8 @@ motor:
 
   driver:
     address: "0x01"
+    # zdt_v2 uses speed slope + target speed x10; emm_v5 uses speed + 8-bit accel.
+    protocol: emm_v5
     sync: 0
 
   kctrl:
@@ -16,20 +18,25 @@ motor:
     speed_step_rpm: 10.0
     # Allowed speed range (RPM). / 允许速度范围(RPM)。
     min_speed_rpm: 10.0
-    max_speed_rpm: 2000.0
-    # Acceleration parameter (0..255). / 加速度参数(0~255)。
+    max_speed_rpm: 3000.0
+    # Acceleration for emm_v5, 0..255. Larger values accelerate faster.
     accel: 10
+    # Delay after enabling the driver before sending speed command. / 使能后发速度命令前的延时。
+    enable_delay_s: 0.08
     # Direction mapping: direction bits for q/e. / 方向映射：q/e 对应的方向位。
     forward_direction: 0
     reverse_direction: 1
-    # Wait for driver ACK; use false if ACK frame format is unstable. / 是否等待驱动 ACK；若驱动返回帧格式不稳定，建议 false。
-    wait_ack: false
+    # Wait for driver ACK so Qt reports protocol errors instead of assuming success.
+    wait_ack: true
 
   conveyor:
-    # Qt conveyor speed range is 0.1~0.5 m/s. These RPM endpoints are used
+    # Qt conveyor speed range. These RPM endpoints are used
     # when roller_diameter_m or rpm_per_ms is not configured.
+    min_speed_ms: 0.1
+    max_speed_ms: 1.0
+    default_speed_ms: 0.5
     min_speed_rpm: 10.0
-    max_speed_rpm: 2000.0
+    max_speed_rpm: 3000.0
     # Optional calibration alternatives:
     # rpm_per_ms: 4000.0
     # roller_diameter_m: 0.06

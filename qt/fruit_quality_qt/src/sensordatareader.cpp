@@ -226,7 +226,10 @@ QString SensorDataReader::unitFor(const QString &key) const
     if (lowered.contains("ethylene") || lowered.contains("乙烯")) {
         return "ppm";
     }
-    if (lowered.contains("air_quality") || lowered.contains("ppm")) {
+    if (lowered == "air_quality_ppm") {
+        return "%";
+    }
+    if (lowered.contains("ppm")) {
         return "ppm";
     }
 

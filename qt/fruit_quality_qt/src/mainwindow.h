@@ -71,6 +71,7 @@ private slots:
     void showConveyorControlPage();
     void showLedControlPage();
     void showMangoQualityPage();
+    void showServoControlPage();
     void refreshSensorData();
     void refreshMangoQualityData();
     void readSensorMessages();
@@ -91,6 +92,9 @@ private slots:
     void turnLedOff();
     void toggleLedAutoMode();
     void updateLedAutoControl();
+    void moveServoToPosition1();
+    void moveServoToPosition2();
+    void moveServoToPosition3();
 
 private:
     QWidget *createStartPage();
@@ -102,6 +106,7 @@ private:
     QWidget *createConveyorControlPage();
     QWidget *createLedControlPage();
     QWidget *createMangoQualityPage();
+    QWidget *createServoControlPage();
     QLabel *makeSensorNameLabel(const QString &text);
     QLabel *makeSensorValueLabel();
     void applyGlobalStyle();
@@ -118,9 +123,11 @@ private:
     void setVideoMessage(const QString &message);
     double currentConveyorSpeed() const;
     void runMotorCommand(const QString &command);
+    void loadConveyorSpeedRange();
     QStringList parseCsvLine(const QString &line) const;
     int readLatestLightLux() const;
     void runLedCommand(int brightnessPct);
+    void runServoCommand(const QString &position, const QString &label);
 
     QStackedWidget *m_pages;
     QStackedWidget *m_functionPages;
@@ -157,7 +164,11 @@ private:
     QLabel *m_mangoDataValueLabel;
     QLabel *m_mangoQualityStatusLabel;
     QLabel *m_mangoReasonLabel;
+    QLabel *m_servoStatusLabel;
     int m_conveyorDirection;
+    int m_conveyorMinSpeedX10;
+    int m_conveyorMaxSpeedX10;
+    int m_conveyorDefaultSpeedX10;
     int m_ledCurrentBrightness;
     bool m_ledAutoEnabled;
     bool m_ledWasStarted;

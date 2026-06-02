@@ -1,0 +1,11 @@
+[Unit]
+Description=Configure sorter servo PWM permissions
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/elf/projects/src/hardware/servo/setup_pwm_permissions.sh /home/elf/projects/config/servo.yaml
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

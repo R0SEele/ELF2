@@ -20,6 +20,7 @@ CMD_START_PERIODIC_MEASURE = 0x21B1
 CMD_STOP_PERIODIC_MEASURE = 0x3F86
 CMD_GET_DATA_READY = 0xE4B8
 CMD_READ_MEASUREMENT = 0xEC05
+DEFAULT_MEASUREMENT_PERIOD_S = 5.0
 
 
 def _crc8(data):
@@ -105,6 +106,14 @@ class SCD40:
         self._started_at = None
         time.sleep(0.5)
 
+    def restart_periodic_measurement(self):
+        try:
+            self.stop_periodic_measurement()
+        except SCD40Error:
+            self._started_at = None
+            time.sleep(0.5)
+        self.start_periodic_measurement()
+
     def data_ready(self):
         frame = self._read_response(CMD_GET_DATA_READY, 3, delay_s=0.001)
         if len(frame) != 3:
@@ -153,13 +162,23 @@ class SCD40:
 
     def read_with_retry(self, max_retries=3, ready_timeout_s=2.0, poll_interval_s=0.2):
         last_error = None
-        for _ in range(max_retries):
+        for attempt in range(max_retries):
             try:
+                if self._started_at is None:
+                    self.start_periodic_measurement()
+
+                warmup_remaining_s = self._warmup_s - (time.monotonic() - self._started_at)
+                if warmup_remaining_s > 0:
+                    time.sleep(warmup_remaining_s)
+
+                ready_timeout_s = max(ready_timeout_s, DEFAULT_MEASUREMENT_PERIOD_S + 1.0)
                 if not self.wait_data_ready(timeout_s=ready_timeout_s, poll_interval_s=poll_interval_s):
                     raise SCD40Error("No fresh data within timeout")
                 return self.read_once()
             except SCD40Error as exc:
                 last_error = exc
+                if attempt + 1 < max_retries:
+                    self.restart_periodic_measurement()
         raise SCD40Error(f"All attempts failed: {last_error}")
 
 

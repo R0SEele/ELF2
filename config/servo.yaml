@@ -1,0 +1,29 @@
+servo:
+  pwm:
+    # PWM2 signal pin. / 舵机信号线接开发板 PWM2。
+    chip: 0
+    channel: 0
+    base_path: /sys/class/pwm
+    polarity: normal
+
+  timing:
+    # Standard servo PWM: 20 ms period, 50 Hz. / 标准舵机 PWM：20ms 周期，50Hz。
+    period_ns: 20000000
+    min_pulse_us: 500
+    neutral_pulse_us: 1500
+    max_pulse_us: 2500
+
+  angle:
+    # 180 degree positional servo using signed offset scale:
+    # 500us=-90deg, 1500us=0deg, 2500us=90deg.
+    min_deg: -90.0
+    neutral_deg: 0.0
+    max_deg: 90.0
+    startup_deg: 0.0
+    step_deg: 30.0
+    settle_s: 0.35
+
+  sorter:
+    center_deg: 0.0
+    left_deg: -45.0
+    right_deg: 45.0
