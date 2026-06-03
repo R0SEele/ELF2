@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.o
+*.tmp
+*.bak
+*.orig
+*.old
+*.swp
+*.log
+
+datas/csv/test.csv
+datas/csv/*debug*.csv

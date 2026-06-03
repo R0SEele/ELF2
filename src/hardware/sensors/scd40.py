@@ -200,7 +200,7 @@ def main():
 
         bus = _cfg_or_default(args.bus, cfg, "bus", 4, int)
         address = _cfg_or_default(args.address, cfg, "address", 0x62, lambda x: int(x, 0) if isinstance(x, str) else int(x))
-        interval_s = _cfg_or_default(args.interval, cfg, "read_interval_s", 2.0, float)
+        interval_s = _cfg_or_default(args.interval, cfg, "read_interval_s", 5.0, float)
         count = _cfg_or_default(args.count, cfg, "sample_count", 0, int)
         warmup_s = _cfg_or_default(args.warmup, cfg, "warmup_s", 5.0, float)
         max_retries = _cfg_or_default(args.max_retries, cfg, "max_retries", 3, int)

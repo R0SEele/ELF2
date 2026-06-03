@@ -14,6 +14,7 @@
 #include <QSpacerItem>
 #include <QTextStream>
 #include <QVBoxLayout>
+#include <QtGlobal>
 
 namespace {
 const char *kSensorCsvDirectory = "/home/elf/projects/datas/csv";
@@ -26,6 +27,15 @@ const char *kServoCommandScript = "/home/elf/projects/src/hardware/servo/sorter.
 const char *kMotorConfigFile = "/home/elf/projects/config/motor.yaml";
 const char *kSensorCsvFile = "/home/elf/projects/datas/csv/sensor_realtime.csv";
 const char *kMangoQualityCsvFile = "/home/elf/projects/datas/csv/mango_quality_realtime.csv";
+const int kEnvironmentSampleIntervalS = 5;
+const int kSensorRefreshIntervalMs = 5000;
+const int kLedAutoIntervalMs = 5000;
+const int kLedAutoMinAdjustGapMs = 4500;
+const int kLedAutoDeadbandLux = 100;
+const int kLedAutoMediumErrorLux = 300;
+const int kLedAutoLargeErrorLux = 600;
+const double kLedAutoFilterAlpha = 0.35;
+const int kSensorStopWaitMs = 8000;
 const int kSensorCardCount = 6;
 const int kFrameHeaderSize = 4;
 const int kMaxFrameBytes = 20 * 1024 * 1024;
@@ -214,6 +224,9 @@ MainWindow::MainWindow(QWidget *parent)
       m_ledStatusLabel(nullptr),
       m_ledAutoButton(nullptr),
       m_ledAutoTimer(new QTimer(this)),
+      m_ledFilteredLux(0.0),
+      m_ledHasFilteredLux(false),
+      m_ledLastAutoAdjustMs(0),
       m_mangoMaturityValueLabel(nullptr),
       m_mangoSugarValueLabel(nullptr),
       m_mangoRotValueLabel(nullptr),
@@ -246,7 +259,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_pages->setCurrentIndex(0);
 
     connect(m_sensorTimer, &QTimer::timeout, this, &MainWindow::refreshSensorData);
-    m_sensorTimer->setInterval(1000);
+    m_sensorTimer->setInterval(kSensorRefreshIntervalMs);
     connect(m_mangoQualityTimer, &QTimer::timeout, this, &MainWindow::refreshMangoQualityData);
     m_mangoQualityTimer->setInterval(1000);
 
@@ -269,7 +282,7 @@ MainWindow::MainWindow(QWidget *parent)
             &MainWindow::handleCameraFinished);
 
     connect(m_ledAutoTimer, &QTimer::timeout, this, &MainWindow::updateLedAutoControl);
-    m_ledAutoTimer->setInterval(1000);
+    m_ledAutoTimer->setInterval(kLedAutoIntervalMs);
 }
 
 MainWindow::~MainWindow()
@@ -1281,6 +1294,7 @@ void MainWindow::startSensorProcess()
     QStringList args;
     args << kSensorCsvScript
          << "--output-dir" << kSensorCsvDirectory
+         << "--interval" << QString::number(kEnvironmentSampleIntervalS)
          << "--parent-pid" << QString::number(QCoreApplication::applicationPid());
 
     m_sensorProcess->setWorkingDirectory("/home/elf/projects");
@@ -1298,7 +1312,7 @@ void MainWindow::stopSensorProcess()
     }
 
     m_sensorProcess->terminate();
-    if (!m_sensorProcess->waitForFinished(1500)) {
+    if (!m_sensorProcess->waitForFinished(kSensorStopWaitMs)) {
         m_sensorProcess->kill();
         m_sensorProcess->waitForFinished(1000);
     }
@@ -1714,6 +1728,8 @@ void MainWindow::applyLedBrightness()
     if (m_ledAutoButton) {
         m_ledAutoButton->setText("自动调节：关");
     }
+    m_ledHasFilteredLux = false;
+    m_ledLastAutoAdjustMs = 0;
 
     m_ledCurrentBrightness = m_ledBrightnessSlider->value();
     runLedCommand(m_ledCurrentBrightness);
@@ -1728,6 +1744,8 @@ void MainWindow::turnLedOff()
     if (m_ledAutoButton) {
         m_ledAutoButton->setText("自动调节：关");
     }
+    m_ledHasFilteredLux = false;
+    m_ledLastAutoAdjustMs = 0;
     m_ledCurrentBrightness = 0;
     m_ledWasStarted = false;
     if (m_ledBrightnessSlider) {
@@ -1744,10 +1762,14 @@ void MainWindow::toggleLedAutoMode()
     }
 
     if (m_ledAutoEnabled) {
+        m_ledHasFilteredLux = false;
+        m_ledLastAutoAdjustMs = 0;
         updateLedAutoControl();
         m_ledAutoTimer->start();
     } else {
         m_ledAutoTimer->stop();
+        m_ledHasFilteredLux = false;
+        m_ledLastAutoAdjustMs = 0;
     }
 }
 
@@ -1762,27 +1784,56 @@ void MainWindow::updateLedAutoControl()
         if (m_ledStatusLabel) {
             m_ledStatusLabel->setText("状态：未读取到光照数据");
         }
+        m_ledHasFilteredLux = false;
         return;
+    }
+
+    if (m_ledHasFilteredLux) {
+        m_ledFilteredLux = (1.0 - kLedAutoFilterAlpha) * m_ledFilteredLux
+                           + kLedAutoFilterAlpha * static_cast<double>(lightLux);
+    } else {
+        m_ledFilteredLux = static_cast<double>(lightLux);
+        m_ledHasFilteredLux = true;
     }
 
     const int threshold = m_ledThresholdSlider->value();
     int nextBrightness = m_ledCurrentBrightness;
-    const int error = threshold - lightLux;
-    if (error > 80) {
-        nextBrightness = qMin(100, nextBrightness + 5);
-    } else if (error < -80) {
-        nextBrightness = qMax(0, nextBrightness - 5);
+    const int filteredLux = qRound(m_ledFilteredLux);
+    const int error = threshold - filteredLux;
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const bool canAdjust = m_ledLastAutoAdjustMs == 0
+                           || (nowMs - m_ledLastAutoAdjustMs) >= kLedAutoMinAdjustGapMs;
+
+    if (canAdjust && qAbs(error) > kLedAutoDeadbandLux) {
+        int step = 1;
+        const int absError = qAbs(error);
+        if (absError >= kLedAutoLargeErrorLux) {
+            step = 5;
+        } else if (absError >= kLedAutoMediumErrorLux) {
+            step = 3;
+        }
+
+        if (error > 0) {
+            nextBrightness = qMin(100, nextBrightness + step);
+        } else {
+            nextBrightness = qMax(0, nextBrightness - step);
+        }
     }
 
     if (nextBrightness != m_ledCurrentBrightness) {
         m_ledCurrentBrightness = nextBrightness;
+        m_ledLastAutoAdjustMs = nowMs;
         if (m_ledBrightnessSlider) {
             m_ledBrightnessSlider->setValue(nextBrightness);
         }
         runLedCommand(nextBrightness);
     } else if (m_ledStatusLabel) {
-        m_ledStatusLabel->setText(QString("状态：自动调节中 光照 %1 lx 阈值 %2 lx 亮度 %3%")
+        const QString state = qAbs(error) <= kLedAutoDeadbandLux ? "稳定" : "等待调节";
+        m_ledStatusLabel->setText(QString("状态：自动调节%1 光照 %2 lx 滤波 %3 lx 阈值 %4 lx 亮度 %5%")
+                                  .arg(state)
                                   .arg(lightLux)
+                                  .arg(filteredLux)
                                   .arg(threshold)
                                   .arg(m_ledCurrentBrightness));
     }

@@ -51,30 +51,45 @@ def _payload(readings, name):
     return readings.get(name, {"ok": False, "error": "missing reading"})
 
 
-def _build_row(readings):
+def _build_row(readings, scd40_cache=None, scd40_cache_max_age_s=20.0):
+    now_monotonic = time.monotonic()
     sht30 = _payload(readings, "sht30")
     scd40 = _payload(readings, "scd40")
     gy302 = _payload(readings, "gy302")
     mq135 = _payload(readings, "mq135")
+
+    scd40_for_row = scd40
+    scd40_using_cache = False
+    if scd40.get("ok"):
+        if scd40_cache is not None:
+            scd40_cache["payload"] = dict(scd40)
+            scd40_cache["updated_at"] = now_monotonic
+    elif scd40_cache is not None and "payload" in scd40_cache:
+        cached_age_s = now_monotonic - float(scd40_cache.get("updated_at", 0.0))
+        if cached_age_s <= scd40_cache_max_age_s:
+            scd40_for_row = dict(scd40_cache["payload"])
+            scd40_using_cache = True
 
     temperature_c = None
     humidity_rh = None
     if sht30.get("ok"):
         temperature_c = sht30.get("temperature_c")
         humidity_rh = sht30.get("humidity_rh")
-    elif scd40.get("ok"):
-        temperature_c = scd40.get("temperature_c")
-        humidity_rh = scd40.get("humidity_rh")
+    elif scd40_for_row.get("ok"):
+        temperature_c = scd40_for_row.get("temperature_c")
+        humidity_rh = scd40_for_row.get("humidity_rh")
 
     errors = []
     for name, payload in readings.items():
+        if name == "scd40" and scd40_using_cache:
+            continue
         if not payload.get("ok"):
             errors.append(f"{name}:{payload.get('error', 'unknown error')}")
 
     return {
         "temperature_c": _fmt(temperature_c),
         "humidity_rh": _fmt(humidity_rh),
-        "co2_ppm": _fmt(scd40.get("co2_ppm") if scd40.get("ok") else None, digits=0),
+        "co2_ppm": _fmt(scd40_for_row.get("co2_ppm") if scd40_for_row.get("ok") else None, digits=0),
         "light_lux": _fmt(gy302.get("lux") if gy302.get("ok") else None),
         "air_quality_ppm": _fmt(mq135.get("level_pct") if mq135.get("ok") else None),
         "env_status": "正常" if not errors else "部分异常",
@@ -141,13 +156,18 @@ def main():
         em_cfg = sensors_cfg.get("em", {})
         interval_s = args.interval
         if interval_s is None:
-            interval_s = float(em_cfg.get("read_interval_s", 2.0))
+            interval_s = float(em_cfg.get("read_interval_s", 5.0))
+        scd40_cache_max_age_s = float(em_cfg.get("co2_cache_max_age_s", 20.0))
         if interval_s < 0:
             print("interval must be >= 0", file=sys.stderr)
+            return 1
+        if scd40_cache_max_age_s < 0:
+            print("co2_cache_max_age_s must be >= 0", file=sys.stderr)
             return 1
 
         monitor = EnvironmentMonitor(sensors_cfg=sensors_cfg)
         _ensure_header(csv_path)
+        scd40_cache = {}
 
         sample_index = 0
         while _running:
@@ -155,7 +175,11 @@ def main():
                 break
 
             sample_index += 1
-            row = _build_row(monitor.read_all())
+            row = _build_row(
+                monitor.read_all(),
+                scd40_cache=scd40_cache,
+                scd40_cache_max_age_s=scd40_cache_max_age_s,
+            )
             _append_row(csv_path, row)
             print(f"updated {csv_path} #{sample_index}", file=sys.stderr, flush=True)
 

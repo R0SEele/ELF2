@@ -245,7 +245,7 @@ def main():
 		em_cfg = sensors_cfg.get("em", {})
 
 		count = _cfg_or_default(args.count, em_cfg, "sample_count", 0, int)
-		interval_s = _cfg_or_default(args.interval, em_cfg, "read_interval_s", 2.0, float)
+		interval_s = _cfg_or_default(args.interval, em_cfg, "read_interval_s", 5.0, float)
 
 		if count < 0:
 			raise EMError("count must be >= 0")

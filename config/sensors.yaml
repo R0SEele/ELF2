@@ -1,4 +1,10 @@
 sensors:
+  em:
+    # Unified environment acquisition period. Keep this close to SCD40's fresh data period.
+    read_interval_s: 5.0
+    # Keep the last valid CO2 value during brief SCD40 no-fresh-data intervals.
+    co2_cache_max_age_s: 20.0
+
   sht30:
     # I2C bus index (e.g. /dev/i2c-4). / I2C 总线索引，例如 /dev/i2c-4。
     bus: 4
@@ -21,7 +27,7 @@ sensors:
     # Number of samples to average. Use 0 for single-shot. / 平均采样次数；0 表示单次采样。
     sample_count: 0
     # Interval between periodic reads. / 周期读取间隔。
-    read_interval_s: 2.0
+    read_interval_s: 5.0
     # Warmup time after start periodic measurement. / 开始周期测量后的预热时间。
     warmup_s: 5.0
     # Max retries when transfer/read fails. / 传输或读取失败时的最大重试次数。

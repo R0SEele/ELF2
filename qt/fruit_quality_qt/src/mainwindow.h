@@ -156,6 +156,9 @@ private:
     QLabel *m_ledStatusLabel;
     QPushButton *m_ledAutoButton;
     QTimer *m_ledAutoTimer;
+    double m_ledFilteredLux;
+    bool m_ledHasFilteredLux;
+    qint64 m_ledLastAutoAdjustMs;
     QLabel *m_mangoMaturityValueLabel;
     QLabel *m_mangoSugarValueLabel;
     QLabel *m_mangoRotValueLabel;
