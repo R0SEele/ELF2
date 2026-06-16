@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os
 import signal
 from pathlib import Path
@@ -16,6 +17,8 @@ from yolo11_rknn import YOLO11RKNNDetector, load_labels
 
 DEFAULT_CONFIG = "/home/elf/projects/config/yolo11.yaml"
 DEFAULT_COLOR_CSV = "/home/elf/projects/datas/csv/vision_color_realtime.csv"
+DEFAULT_OBJECT_CSV = "/home/elf/projects/datas/csv/mango_object_realtime.csv"
+DEFAULT_OBJECT_JSON = "/home/elf/projects/datas/csv/mango_object_realtime.json"
 
 
 DEFAULTS = {
@@ -148,6 +151,20 @@ def parse_args():
         default=5,
         help="Write color features every N frames, 0 disables CSV output",
     )
+    parser.add_argument(
+        "--object-csv",
+        default=DEFAULT_OBJECT_CSV,
+        help="CSV path for latest completed mango object result",
+    )
+    parser.add_argument(
+        "--object-json",
+        default=DEFAULT_OBJECT_JSON,
+        help="JSON path for latest completed mango object result",
+    )
+    parser.add_argument("--enter-line-ratio", type=float, default=0.20, help="Top-to-bottom tracking enter line")
+    parser.add_argument("--count-line-ratio", type=float, default=0.75, help="Top-to-bottom counting line")
+    parser.add_argument("--track-min-frames", type=int, default=4, help="Min stable frames before counting a mango")
+    parser.add_argument("--track-max-missed", type=int, default=6, help="Frames to keep a temporarily lost mango ID")
     return parser.parse_args()
 
 
@@ -239,6 +256,37 @@ COLOR_CSV_FIELDS = [
     "brown_area_ratio",
 ]
 
+OBJECT_CSV_FIELDS = [
+    "timestamp",
+    "frame_index",
+    "mango_id",
+    "track_id",
+    "label",
+    "confidence",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "center_x",
+    "center_y",
+    "area_px",
+    "stable_frames",
+    "first_frame",
+    "last_frame",
+    "consistency_score",
+    "consistency_label",
+    "rgb_r_mean",
+    "rgb_g_mean",
+    "rgb_b_mean",
+    "hsv_h_mean_deg",
+    "hsv_s_mean_pct",
+    "hsv_v_mean_pct",
+    "green_ratio",
+    "yellow_orange_ratio",
+    "dark_spot_ratio",
+    "brown_area_ratio",
+]
+
 
 def write_color_features(csv_path, frame_index, features):
     if not csv_path:
@@ -277,6 +325,285 @@ def write_color_features(csv_path, frame_index, features):
     os.replace(str(temp_path), str(path))
 
 
+def _box_center(feature):
+    return (
+        (float(feature["x1"]) + float(feature["x2"])) * 0.5,
+        (float(feature["y1"]) + float(feature["y2"])) * 0.5,
+    )
+
+
+def _box_area(feature):
+    return max(1.0, float(feature.get("area_px", 1.0)))
+
+
+def _iou(a, b):
+    ax1, ay1, ax2, ay2 = float(a["x1"]), float(a["y1"]), float(a["x2"]), float(a["y2"])
+    bx1, by1, bx2, by2 = float(b["x1"]), float(b["y1"]), float(b["x2"]), float(b["y2"])
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    area_a = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+    area_b = max(1.0, (bx2 - bx1) * (by2 - by1))
+    return inter / max(1.0, area_a + area_b - inter)
+
+
+def _mean_feature(samples, key, default=0.0):
+    values = []
+    for sample in samples:
+        try:
+            values.append(float(sample.get(key, default)))
+        except (TypeError, ValueError):
+            pass
+    if not values:
+        return default
+    return sum(values) / len(values)
+
+
+def _vote_label(samples):
+    votes = {}
+    for sample in samples:
+        label = str(sample.get("label", "")).strip()
+        if not label:
+            continue
+        try:
+            weight = max(0.01, float(sample.get("confidence", 0.0)))
+        except (TypeError, ValueError):
+            weight = 0.01
+        votes[label] = votes.get(label, 0.0) + weight
+    if not votes:
+        return "", 0.0
+    label, score = max(votes.items(), key=lambda item: item[1])
+    total = sum(votes.values())
+    return label, score / max(total, 1e-6)
+
+
+def _consistency_label(score):
+    if score >= 0.80:
+        return "高"
+    if score >= 0.60:
+        return "中"
+    return "低"
+
+
+class MangoTrack:
+    def __init__(self, track_id, feature, frame_index):
+        self.track_id = track_id
+        self.first_frame = frame_index
+        self.last_frame = frame_index
+        self.last_feature = dict(feature)
+        self.prev_center_y = _box_center(feature)[1]
+        self.center_y = self.prev_center_y
+        self.missed = 0
+        self.counted = False
+        self.samples = []
+        self.add_sample(feature, frame_index)
+
+    def add_sample(self, feature, frame_index):
+        self.prev_center_y = self.center_y
+        self.center_y = _box_center(feature)[1]
+        self.last_frame = frame_index
+        self.last_feature = dict(feature)
+        self.missed = 0
+        self.samples.append(dict(feature))
+        if len(self.samples) > 40:
+            self.samples = self.samples[-40:]
+
+    def summary(self, frame_index):
+        label, consistency = _vote_label(self.samples)
+        latest = self.last_feature
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        return {
+            "timestamp": timestamp,
+            "frame_index": frame_index,
+            "mango_id": self.track_id,
+            "track_id": self.track_id,
+            "label": label or latest.get("label", ""),
+            "confidence": _mean_feature(self.samples, "confidence"),
+            "x1": int(float(latest["x1"])),
+            "y1": int(float(latest["y1"])),
+            "x2": int(float(latest["x2"])),
+            "y2": int(float(latest["y2"])),
+            "center_x": int(_box_center(latest)[0]),
+            "center_y": int(_box_center(latest)[1]),
+            "area_px": int(_mean_feature(self.samples, "area_px", _box_area(latest))),
+            "stable_frames": len(self.samples),
+            "first_frame": self.first_frame,
+            "last_frame": self.last_frame,
+            "consistency_score": consistency,
+            "consistency_label": _consistency_label(consistency),
+            "rgb_r_mean": _mean_feature(self.samples, "rgb_r_mean"),
+            "rgb_g_mean": _mean_feature(self.samples, "rgb_g_mean"),
+            "rgb_b_mean": _mean_feature(self.samples, "rgb_b_mean"),
+            "hsv_h_mean_deg": _mean_feature(self.samples, "hsv_h_mean_deg"),
+            "hsv_s_mean_pct": _mean_feature(self.samples, "hsv_s_mean_pct"),
+            "hsv_v_mean_pct": _mean_feature(self.samples, "hsv_v_mean_pct"),
+            "green_ratio": _mean_feature(self.samples, "green_ratio"),
+            "yellow_orange_ratio": _mean_feature(self.samples, "yellow_orange_ratio"),
+            "dark_spot_ratio": _mean_feature(self.samples, "dark_spot_ratio"),
+            "brown_area_ratio": _mean_feature(self.samples, "brown_area_ratio"),
+        }
+
+
+class MangoTracker:
+    def __init__(self, enter_line_ratio=0.20, count_line_ratio=0.75, min_frames=4, max_missed=6):
+        self.enter_line_ratio = enter_line_ratio
+        self.count_line_ratio = count_line_ratio
+        self.min_frames = max(1, int(min_frames))
+        self.max_missed = max(1, int(max_missed))
+        self.next_track_id = 1
+        self.tracks = {}
+        self.completed_count = 0
+
+    def _new_track(self, feature, frame_index):
+        track = MangoTrack(self.next_track_id, feature, frame_index)
+        self.tracks[track.track_id] = track
+        self.next_track_id += 1
+        return track
+
+    def _match_score(self, track, feature, width, height):
+        cx, cy = _box_center(feature)
+        tx, ty = _box_center(track.last_feature)
+        dx = abs(cx - tx)
+        dy = abs(cy - ty)
+        max_dx = max(60.0, width * 0.18)
+        max_dy = max(80.0, height * 0.22)
+        if dx > max_dx or dy > max_dy:
+            return None
+        if cy < ty - height * 0.10:
+            return None
+        area_ratio = _box_area(feature) / max(_box_area(track.last_feature), 1.0)
+        if area_ratio < 0.30 or area_ratio > 3.20:
+            return None
+        overlap = _iou(track.last_feature, feature)
+        return (dx / max_dx) + (dy / max_dy) - overlap
+
+    def update(self, features, frame_index, frame_shape):
+        height, width = frame_shape[:2]
+        count_line_y = height * self.count_line_ratio
+        enter_line_y = height * self.enter_line_ratio
+
+        candidates = []
+        unmatched_tracks = set(self.tracks.keys())
+        unmatched_features = set(range(len(features)))
+
+        for feature_index, feature in enumerate(features):
+            for track_id, track in self.tracks.items():
+                if track.counted:
+                    continue
+                score = self._match_score(track, feature, width, height)
+                if score is not None:
+                    candidates.append((score, track_id, feature_index))
+
+        for _score, track_id, feature_index in sorted(candidates, key=lambda item: item[0]):
+            if track_id not in unmatched_tracks or feature_index not in unmatched_features:
+                continue
+            track = self.tracks[track_id]
+            track.add_sample(features[feature_index], frame_index)
+            unmatched_tracks.remove(track_id)
+            unmatched_features.remove(feature_index)
+
+        for feature_index in sorted(unmatched_features):
+            self._new_track(features[feature_index], frame_index)
+
+        completed = []
+        for track_id in list(unmatched_tracks):
+            track = self.tracks.get(track_id)
+            if track is None:
+                continue
+            track.missed += 1
+
+        for track_id, track in list(self.tracks.items()):
+            crossed = track.prev_center_y < count_line_y <= track.center_y
+            has_enough_samples = len(track.samples) >= self.min_frames
+            entered = track.center_y >= enter_line_y
+            if not track.counted and crossed and has_enough_samples and entered:
+                track.counted = True
+                self.completed_count += 1
+                completed.append(track.summary(frame_index))
+            if track.missed > self.max_missed or (track.counted and track.center_y > count_line_y + height * 0.10):
+                self.tracks.pop(track_id, None)
+
+        return completed
+
+    def active_tracks(self):
+        return list(self.tracks.values())
+
+
+def write_object_result(csv_path, json_path, result):
+    if not result:
+        return
+
+    timestamp = result.get("timestamp") or time.strftime("%Y-%m-%d %H:%M:%S")
+    row = {field: result.get(field, "") for field in OBJECT_CSV_FIELDS}
+    row["timestamp"] = timestamp
+    for key in (
+        "confidence",
+        "consistency_score",
+        "rgb_r_mean",
+        "rgb_g_mean",
+        "rgb_b_mean",
+        "hsv_h_mean_deg",
+        "hsv_s_mean_pct",
+        "hsv_v_mean_pct",
+        "green_ratio",
+        "yellow_orange_ratio",
+        "dark_spot_ratio",
+        "brown_area_ratio",
+    ):
+        try:
+            row[key] = "{:.4f}".format(float(row[key]))
+        except (TypeError, ValueError):
+            row[key] = ""
+
+    if csv_path:
+        path = Path(csv_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        with temp_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=OBJECT_CSV_FIELDS)
+            writer.writeheader()
+            writer.writerow(row)
+        os.replace(str(temp_path), str(path))
+
+    if json_path:
+        path = Path(json_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        with temp_path.open("w", encoding="utf-8") as handle:
+            json.dump(row, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(str(temp_path), str(path))
+
+
+def draw_tracking_overlay(image, tracker, enter_line_ratio, count_line_ratio):
+    height, width = image.shape[:2]
+    enter_y = int(height * enter_line_ratio)
+    count_y = int(height * count_line_ratio)
+    cv2.line(image, (0, enter_y), (width - 1, enter_y), (80, 180, 255), 2)
+    cv2.line(image, (0, count_y), (width - 1, count_y), (0, 220, 120), 2)
+    cv2.putText(image, "Detect zone", (12, max(24, enter_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 180, 255), 2)
+    cv2.putText(image, "Count line", (12, max(24, count_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 120), 2)
+
+    for track in tracker.active_tracks():
+        feature = track.last_feature
+        x1, y1 = int(float(feature["x1"])), int(float(feature["y1"]))
+        text = "Mango #{}  {}f".format(track.track_id, len(track.samples))
+        cv2.putText(
+            image,
+            text,
+            (x1, max(18, y1 - 28)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.58,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+
 def main():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
@@ -304,6 +631,12 @@ def main():
     detect_count = 0
     start_time = time.time()
     last_report = start_time
+    tracker = MangoTracker(
+        enter_line_ratio=args.enter_line_ratio,
+        count_line_ratio=args.count_line_ratio,
+        min_frames=args.track_min_frames,
+        max_missed=args.track_max_missed,
+    )
 
     try:
         cap = open_camera(args)
@@ -329,14 +662,19 @@ def main():
             detect_count += count
             frames += 1
 
+            completed_objects = tracker.update(color_features, frames, annotated.shape)
+            for completed in completed_objects:
+                write_object_result(args.object_csv, args.object_json, completed)
+
             if args.color_log_interval > 0 and frames % args.color_log_interval == 0:
                 write_color_features(args.color_csv, frames, color_features)
 
             now = time.time()
             fps = frames / max(now - start_time, 1e-6)
+            draw_tracking_overlay(annotated, tracker, args.enter_line_ratio, args.count_line_ratio)
             cv2.putText(
                 annotated,
-                "FPS {:.1f}  DET {}".format(fps, count),
+                "FPS {:.1f}  DET {}  COUNT {}".format(fps, count, tracker.completed_count),
                 (12, 32),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.9,

@@ -33,8 +33,11 @@ motor:
     # Qt conveyor speed range. These RPM endpoints are used
     # when roller_diameter_m or rpm_per_ms is not configured.
     min_speed_ms: 0.1
-    max_speed_ms: 1.0
-    default_speed_ms: 0.5
+    max_speed_ms: 0.18
+    default_speed_ms: 0.13
+    slow_speed_ms: 0.10
+    medium_speed_ms: 0.13
+    fast_speed_ms: 0.16
     min_speed_rpm: 10.0
     max_speed_rpm: 3000.0
     # Optional calibration alternatives:

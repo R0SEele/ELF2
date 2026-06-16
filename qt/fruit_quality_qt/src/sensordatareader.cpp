@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QSet>
 #include <QTextStream>
+#include <QtGlobal>
 
 namespace {
 bool looksLikeHeader(const QStringList &fields)
@@ -89,7 +90,7 @@ SensorSnapshot SensorDataReader::readCsv(const QString &filePath) const
                 continue;
             }
 
-            snapshot.values.append({displayNameFor(key), value, unitFor(key)});
+            snapshot.values.append({displayNameFor(key), displayValueFor(key, value), unitFor(key)});
         }
         return snapshot;
     }
@@ -117,7 +118,12 @@ SensorSnapshot SensorDataReader::readCsv(const QString &filePath) const
                 unit = unitFor(key);
             }
 
-            snapshot.values.append({displayNameFor(key), value, unit});
+            const QString displayValue = displayValueFor(key, value);
+            if (displayValue != value.trimmed()) {
+                unit.clear();
+            }
+
+            snapshot.values.append({displayNameFor(key), displayValue, unit});
         }
 
         if (!snapshot.values.isEmpty()) {
@@ -207,27 +213,141 @@ QString SensorDataReader::displayNameFor(const QString &key) const
     return key.trimmed();
 }
 
+QString SensorDataReader::displayValueFor(const QString &key, const QString &value) const
+{
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty()) {
+        return trimmed;
+    }
+
+    const QString lowered = key.trimmed().toLower();
+    if (lowered.contains("env") || lowered.contains("status") || lowered.contains("状态")) {
+        return trimmed;
+    }
+
+    bool ok = false;
+    const double numeric = trimmed.toDouble(&ok);
+    if (!ok) {
+        return trimmed;
+    }
+
+    const QString rating = ratingFor(key, numeric);
+    if (rating.isEmpty()) {
+        return trimmed;
+    }
+
+    if (lowered.contains("temp") || lowered.contains("温度")) {
+        return QString("%1℃  %2").arg(QString::number(numeric, 'f', 1), rating);
+    }
+    if (lowered.contains("humid") || lowered.contains("湿度")) {
+        return QString("%1%  %2").arg(QString::number(numeric, 'f', 1), rating);
+    }
+    if (lowered == "air_quality_ppm") {
+        return QString("%1%  %2").arg(QString::number(numeric, 'f', 1), rating);
+    }
+    if (lowered.contains("co2") || lowered.contains("二氧化碳")) {
+        return QString("%1  %2").arg(QString::number(qRound(numeric)), rating);
+    }
+    if (lowered.contains("light") || lowered.contains("lux") || lowered.contains("光照")) {
+        return QString("%1  %2").arg(QString::number(qRound(numeric)), rating);
+    }
+
+    return QString("%1  %2").arg(trimmed, rating);
+}
+
+QString SensorDataReader::ratingFor(const QString &key, double value) const
+{
+    const QString lowered = key.trimmed().toLower();
+
+    if (lowered.contains("temp") || lowered.contains("温度")) {
+        if (value < 15.0) {
+            return "偏低";
+        }
+        if (value <= 28.0) {
+            return "适宜";
+        }
+        if (value <= 35.0) {
+            return "偏高";
+        }
+        return "过热";
+    }
+
+    if (lowered.contains("humid") || lowered.contains("湿度")) {
+        if (value < 40.0) {
+            return "偏干";
+        }
+        if (value <= 70.0) {
+            return "舒适";
+        }
+        return "偏湿";
+    }
+
+    if (lowered.contains("co2") || lowered.contains("二氧化碳")) {
+        if (value < 800.0) {
+            return "空气清新";
+        }
+        if (value < 1200.0) {
+            return "略高";
+        }
+        if (value < 2000.0) {
+            return "偏闷";
+        }
+        return "通风不足";
+    }
+
+    if (lowered.contains("light") || lowered.contains("lux") || lowered.contains("光照")) {
+        if (value < 50.0) {
+            return "偏暗";
+        }
+        if (value < 200.0) {
+            return "柔和";
+        }
+        if (value < 500.0) {
+            return "明亮";
+        }
+        if (value < 1000.0) {
+            return "较亮";
+        }
+        return "强光";
+    }
+
+    if (lowered == "air_quality_ppm") {
+        if (value < 25.0) {
+            return "良好";
+        }
+        if (value < 50.0) {
+            return "一般";
+        }
+        if (value < 75.0) {
+            return "偏差";
+        }
+        return "较差";
+    }
+
+    return QString();
+}
+
 QString SensorDataReader::unitFor(const QString &key) const
 {
     const QString lowered = key.trimmed().toLower();
 
     if (lowered.contains("temp") || lowered.contains("温度")) {
-        return "℃";
+        return QString();
     }
     if (lowered.contains("humid") || lowered.contains("湿度")) {
-        return "%";
+        return QString();
     }
     if (lowered.contains("co2") || lowered.contains("二氧化碳")) {
-        return "ppm";
+        return QString();
     }
     if (lowered.contains("light") || lowered.contains("lux") || lowered.contains("光照")) {
-        return "lx";
+        return QString();
     }
     if (lowered.contains("ethylene") || lowered.contains("乙烯")) {
         return "ppm";
     }
     if (lowered == "air_quality_ppm") {
-        return "%";
+        return QString();
     }
     if (lowered.contains("ppm")) {
         return "ppm";

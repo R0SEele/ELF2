@@ -3,16 +3,22 @@ import json
 import math
 import os
 import time
+from datetime import datetime
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
 PROJECT_ROOT = Path("/home/elf/projects")
 DEFAULT_VISION_CSV = PROJECT_ROOT / "datas" / "csv" / "vision_color_realtime.csv"
+DEFAULT_OBJECT_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_object_realtime.csv"
 DEFAULT_SPECTRUM_CSV = PROJECT_ROOT / "datas" / "spectrum_quality_samples.csv"
 ALT_SPECTRUM_CSV = PROJECT_ROOT / "datas" / "csv" / "spectrum_realtime.csv"
 DEFAULT_OUTPUT_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_quality_realtime.csv"
 DEFAULT_OUTPUT_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_quality_realtime.json"
+DEFAULT_BATCH_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_batch_summary.csv"
+DEFAULT_BATCH_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_batch_summary.json"
+DEFAULT_HISTORY_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_quality_history.csv"
+OBJECT_STALE_SECONDS = 20.0
 
 
 MANGO_LABELS = {
@@ -33,6 +39,12 @@ MANGO_LABELS = {
 
 QUALITY_FIELDS = [
     "timestamp",
+    "mango_id",
+    "stable_frames",
+    "consistency_label",
+    "consistency_score",
+    "quality_grade",
+    "suggested_channel",
     "vision_timestamp",
     "spectrum_timestamp",
     "data_status",
@@ -64,10 +76,58 @@ QUALITY_FIELDS = [
     "reason",
 ]
 
+BATCH_FIELDS = [
+    "timestamp",
+    "batch_id",
+    "total_count",
+    "unripe_count",
+    "ripe_count",
+    "overripe_count",
+    "grade_a_count",
+    "grade_b_count",
+    "grade_c_count",
+    "reject_count",
+    "saleable_count",
+    "saleable_ratio",
+    "rot_risk_count",
+    "rot_risk_ratio",
+    "channel_sales_count",
+    "channel_ripen_count",
+    "channel_process_count",
+    "channel_recheck_count",
+    "channel_reject_count",
+    "last_mango_id",
+    "last_quality_grade",
+    "last_suggested_channel",
+    "last_maturity_label",
+    "last_final_status",
+    "last_timestamp",
+]
+
+HISTORY_FIELDS = [
+    "timestamp",
+    "mango_id",
+    "quality_grade",
+    "suggested_channel",
+    "maturity_label",
+    "reference_brix_range",
+    "rot_status",
+    "final_status",
+    "consistency_label",
+    "stable_frames",
+    "yolo_label",
+    "yolo_confidence",
+    "reason",
+]
+
 
 @dataclass
 class VisionFeatures:
     timestamp: str = ""
+    mango_id: str = ""
+    stable_frames: int = 0
+    consistency_label: str = ""
+    consistency_score: float = 0.0
     label: str = ""
     label_key: str = ""
     confidence: float = 0.0
@@ -112,6 +172,12 @@ class SpectrumFeatures:
 @dataclass
 class QualityAssessment:
     timestamp: str
+    mango_id: str = ""
+    stable_frames: int = 0
+    consistency_label: str = ""
+    consistency_score: float = 0.0
+    quality_grade: str = "--"
+    suggested_channel: str = "--"
     vision_timestamp: str = ""
     spectrum_timestamp: str = ""
     data_status: str = ""
@@ -141,6 +207,35 @@ class QualityAssessment:
     nir_ratio: float = math.nan
     spectral_centroid_nm: float = math.nan
     reason: str = ""
+
+
+@dataclass
+class BatchSummary:
+    timestamp: str
+    batch_id: str
+    total_count: int = 0
+    unripe_count: int = 0
+    ripe_count: int = 0
+    overripe_count: int = 0
+    grade_a_count: int = 0
+    grade_b_count: int = 0
+    grade_c_count: int = 0
+    reject_count: int = 0
+    saleable_count: int = 0
+    saleable_ratio: float = 0.0
+    rot_risk_count: int = 0
+    rot_risk_ratio: float = 0.0
+    channel_sales_count: int = 0
+    channel_ripen_count: int = 0
+    channel_process_count: int = 0
+    channel_recheck_count: int = 0
+    channel_reject_count: int = 0
+    last_mango_id: str = ""
+    last_quality_grade: str = ""
+    last_suggested_channel: str = ""
+    last_maturity_label: str = ""
+    last_final_status: str = ""
+    last_timestamp: str = ""
 
 
 def clamp(value, low=0.0, high=100.0):
@@ -228,6 +323,10 @@ def read_latest_vision(path=DEFAULT_VISION_CSV):
     label_key, _label_score, _label_zh = label_info
     return VisionFeatures(
         timestamp=str(row.get("timestamp", "")),
+        mango_id=str(row.get("mango_id", "")),
+        stable_frames=int(safe_float(row.get("stable_frames"), 0.0) or 0),
+        consistency_label=str(row.get("consistency_label", "")),
+        consistency_score=clamp(safe_float(row.get("consistency_score"), 0.0), 0.0, 1.0),
         label=str(row.get("label", "")),
         label_key=label_key,
         confidence=clamp(safe_float(row.get("confidence"), 0.0), 0.0, 1.0),
@@ -244,6 +343,15 @@ def read_latest_vision(path=DEFAULT_VISION_CSV):
         brown_area_ratio=safe_float(row.get("brown_area_ratio")),
         raw=row,
     )
+
+
+def read_latest_object(path=DEFAULT_OBJECT_CSV):
+    vision = read_latest_vision(path)
+    if vision is None:
+        return None
+    if not is_recent_timestamp(vision.timestamp, OBJECT_STALE_SECONDS):
+        return None
+    return vision
 
 
 def _first_existing_spectrum_path(path):
@@ -333,6 +441,25 @@ def safe_div(numerator, denominator):
     if is_nan(numerator) or is_nan(denominator) or abs(float(denominator)) < 1e-9:
         return math.nan
     return float(numerator) / float(denominator)
+
+
+def parse_timestamp(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def is_recent_timestamp(value, max_age_s):
+    stamp = parse_timestamp(value)
+    if stamp is None:
+        return False
+    return abs((datetime.now() - stamp).total_seconds()) <= max_age_s
 
 
 def yolo_maturity_score(vision):
@@ -549,6 +676,36 @@ def final_status(maturity, rot):
     return "可接受"
 
 
+def quality_grade(maturity, sugar, rot):
+    if rot == "腐烂/建议剔除":
+        return "剔除"
+    if rot == "疑似腐烂":
+        return "C级"
+    if maturity == "成熟" and sugar in ("较高", "中等"):
+        return "A级"
+    if maturity == "成熟":
+        return "B级"
+    if maturity in ("未熟", "过熟"):
+        return "B级"
+    return "--"
+
+
+def suggested_channel(maturity, sugar, rot):
+    if rot == "腐烂/建议剔除":
+        return "剔除通道"
+    if rot == "疑似腐烂":
+        return "复检通道"
+    if maturity == "未熟":
+        return "催熟通道"
+    if maturity == "成熟":
+        return "销售通道"
+    if maturity == "过熟":
+        return "加工通道"
+    if sugar == "无法评估":
+        return "等待数据"
+    return "销售通道"
+
+
 def data_status(vision, spectrum):
     parts = []
     parts.append("vision_ok" if vision else "vision_missing")
@@ -559,14 +716,15 @@ def data_status(vision, spectrum):
 def build_reason(vision, spectrum, maturity, sugar_label, rot):
     reasons = []
     if vision:
-        reasons.append("YOLO={}({:.2f})".format(vision.label, vision.confidence))
+        if vision.mango_id:
+            reasons.append("芒果#{}连续检测{}帧".format(vision.mango_id, vision.stable_frames))
+        if vision.consistency_label:
+            reasons.append("多帧稳定性{}".format(vision.consistency_label))
+        reasons.append("视觉判断{}".format(vision.label))
     else:
         reasons.append("未读取到YOLO芒果检测结果")
     if spectrum:
-        if not is_nan(spectrum.red_green_ratio):
-            reasons.append("red_green_ratio={:.3f}".format(spectrum.red_green_ratio))
-        if not is_nan(spectrum.nir_ratio):
-            reasons.append("nir_ratio={:.3f}".format(spectrum.nir_ratio))
+        reasons.append("光谱数据已参与参考")
     else:
         reasons.append("未读取到光谱数据")
     reasons.append("成熟度={}".format(maturity))
@@ -608,6 +766,8 @@ def assess_mango_quality(vision=None, spectrum=None):
     maturity = maturity_label(maturity_value)
     sugar_label, brix_range = sugar_label_and_brix(sugar_value, rot_value)
     rot = rot_status(rot_value)
+    grade = quality_grade(maturity, sugar_label, rot)
+    channel = suggested_channel(maturity, sugar_label, rot)
 
     source_count = int(vision is not None) + int(spectrum is not None)
     maturity_confidence = clamp(45.0 + vision.confidence * 35.0 + source_count * 10.0)
@@ -616,6 +776,12 @@ def assess_mango_quality(vision=None, spectrum=None):
 
     return QualityAssessment(
         timestamp=timestamp,
+        mango_id=vision.mango_id,
+        stable_frames=vision.stable_frames,
+        consistency_label=vision.consistency_label,
+        consistency_score=round(vision.consistency_score, 4),
+        quality_grade=grade,
+        suggested_channel=channel,
         vision_timestamp=vision.timestamp,
         spectrum_timestamp=spectrum.timestamp if spectrum else "",
         data_status=data_status(vision, spectrum),
@@ -660,6 +826,113 @@ def assessment_to_row(assessment):
     return output
 
 
+def assessment_has_object(assessment):
+    if assessment is None:
+        return False
+    mango_id = str(assessment.mango_id or "").strip()
+    if not mango_id or mango_id == "--":
+        return False
+    if assessment.final_status == "无有效检测":
+        return False
+    return True
+
+
+def _is_saleable(assessment):
+    return assessment.quality_grade in ("A级", "B级") and assessment.suggested_channel == "销售通道"
+
+
+class BatchAccumulator:
+    def __init__(self, batch_id=None):
+        self.batch_id = batch_id or time.strftime("%Y%m%d_%H%M%S")
+        self.seen_ids = set()
+        self.assessments = []
+
+    def add(self, assessment):
+        if not assessment_has_object(assessment):
+            return False
+
+        mango_id = str(assessment.mango_id).strip()
+        if mango_id in self.seen_ids:
+            return False
+
+        self.seen_ids.add(mango_id)
+        self.assessments.append(assessment)
+        return True
+
+    def summary(self):
+        summary = BatchSummary(
+            timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+            batch_id=self.batch_id,
+        )
+
+        summary.total_count = len(self.assessments)
+        if not self.assessments:
+            return summary
+
+        for item in self.assessments:
+            if item.maturity_label == "未熟":
+                summary.unripe_count += 1
+            elif item.maturity_label == "成熟":
+                summary.ripe_count += 1
+            elif item.maturity_label == "过熟":
+                summary.overripe_count += 1
+
+            if item.quality_grade == "A级":
+                summary.grade_a_count += 1
+            elif item.quality_grade == "B级":
+                summary.grade_b_count += 1
+            elif item.quality_grade == "C级":
+                summary.grade_c_count += 1
+            elif item.quality_grade == "剔除":
+                summary.reject_count += 1
+
+            if _is_saleable(item):
+                summary.saleable_count += 1
+
+            if item.rot_status in ("疑似腐烂", "腐烂/建议剔除") or item.final_status in ("需要复检", "建议剔除"):
+                summary.rot_risk_count += 1
+
+            if item.suggested_channel == "销售通道":
+                summary.channel_sales_count += 1
+            elif item.suggested_channel == "催熟通道":
+                summary.channel_ripen_count += 1
+            elif item.suggested_channel == "加工通道":
+                summary.channel_process_count += 1
+            elif item.suggested_channel == "复检通道":
+                summary.channel_recheck_count += 1
+            elif item.suggested_channel == "剔除通道":
+                summary.channel_reject_count += 1
+
+        summary.saleable_ratio = round(summary.saleable_count * 100.0 / max(summary.total_count, 1), 2)
+        summary.rot_risk_ratio = round(summary.rot_risk_count * 100.0 / max(summary.total_count, 1), 2)
+
+        last = self.assessments[-1]
+        summary.last_mango_id = last.mango_id
+        summary.last_quality_grade = last.quality_grade
+        summary.last_suggested_channel = last.suggested_channel
+        summary.last_maturity_label = last.maturity_label
+        summary.last_final_status = last.final_status
+        summary.last_timestamp = last.timestamp
+        return summary
+
+
+def batch_summary_to_row(summary):
+    row = asdict(summary)
+    output = {}
+    for field_name in BATCH_FIELDS:
+        value = row.get(field_name, "")
+        if isinstance(value, float):
+            output[field_name] = "{:.2f}".format(value)
+        else:
+            output[field_name] = value
+    return output
+
+
+def assessment_to_history_row(assessment):
+    row = assessment_to_row(assessment)
+    return {field_name: row.get(field_name, "") for field_name in HISTORY_FIELDS}
+
+
 def write_assessment_csv(path, assessment):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -669,6 +942,43 @@ def write_assessment_csv(path, assessment):
         writer.writeheader()
         writer.writerow(assessment_to_row(assessment))
     os.replace(temp_path, path)
+
+
+def write_batch_summary_csv(path, summary):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    with temp_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=BATCH_FIELDS)
+        writer.writeheader()
+        writer.writerow(batch_summary_to_row(summary))
+    os.replace(temp_path, path)
+
+
+def write_assessment_history_csv(path, assessment, max_rows=200):
+    if not assessment_has_object(assessment):
+        return False
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    if path.exists() and path.stat().st_size > 0:
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            rows = [row for row in csv.DictReader(handle)]
+
+    mango_id = str(assessment.mango_id).strip()
+    rows = [row for row in rows if str(row.get("mango_id", "")).strip() != mango_id]
+    rows.append(assessment_to_history_row(assessment))
+    rows = rows[-max(1, int(max_rows)):]
+
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    with temp_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=HISTORY_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(temp_path, path)
+    return True
 
 
 def json_safe_value(value):
@@ -682,6 +992,17 @@ def write_assessment_json(path, assessment):
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(path.suffix + ".tmp")
     data = {key: json_safe_value(value) for key, value in asdict(assessment).items()}
+    with temp_path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2, allow_nan=False)
+        handle.write("\n")
+    os.replace(temp_path, path)
+
+
+def write_batch_summary_json(path, summary):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    data = {key: json_safe_value(value) for key, value in asdict(summary).items()}
     with temp_path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write("\n")

@@ -10,3 +10,4 @@ __pycache__/
 
 datas/csv/test.csv
 datas/csv/*debug*.csv
+config/tuya_cloud_secrets.json

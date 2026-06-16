@@ -31,6 +31,8 @@ private:
     QStringList parseCsvLine(const QString &line) const;
     bool shouldDisplayField(const QString &key) const;
     QString displayNameFor(const QString &key) const;
+    QString displayValueFor(const QString &key, const QString &value) const;
+    QString ratingFor(const QString &key, double value) const;
     QString unitFor(const QString &key) const;
 
     QString m_csvFilePath;

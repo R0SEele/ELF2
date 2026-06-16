@@ -1,0 +1,90 @@
+<view class="page">
+  <view class="header">
+    <view>
+      <view class="title">芒果智检分拣终端</view>
+      <view class="subtitle">设备 {{deviceStatus}} · {{lastUpdated}}</view>
+    </view>
+    <view class="status {{connected ? 'online' : 'offline'}}">{{connected ? '在线' : '离线'}}</view>
+  </view>
+
+  <view class="api-row">
+    <input class="api-input" value="{{apiBaseInput}}" bindinput="onApiBaseInput" />
+    <button class="api-button" bindtap="saveApiBase">连接</button>
+  </view>
+
+  <scroll-view class="content" scroll-y="true">
+    <view class="section">
+      <view class="section-title">当前芒果</view>
+      <view class="metric-grid">
+        <view class="metric" wx:for="{{quality}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">环境</view>
+      <view class="metric-grid">
+        <view class="metric" wx:for="{{environment}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">批次</view>
+      <view class="metric-grid compact">
+        <view class="metric" wx:for="{{batch}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">控制</view>
+
+      <view class="control-row">
+        <view class="control-label">传送带</view>
+        <picker range="{{conveyorOptions}}" range-key="label" value="{{conveyorIndex}}" bindchange="onConveyorChange">
+          <view class="picker-value">{{conveyorOptions[conveyorIndex].label}}</view>
+        </picker>
+      </view>
+
+      <view class="control-row">
+        <view class="control-label">速度</view>
+        <picker range="{{speedOptions}}" range-key="label" value="{{speedIndex}}" bindchange="onSpeedChange">
+          <view class="picker-value">{{speedOptions[speedIndex].label}}</view>
+        </picker>
+      </view>
+
+      <view class="control-row">
+        <view class="control-label">分拣位</view>
+        <picker range="{{sorterOptions}}" range-key="label" value="{{sorterIndex}}" bindchange="onSorterChange">
+          <view class="picker-value">{{sorterOptions[sorterIndex].label}}</view>
+        </picker>
+      </view>
+
+      <view class="switch-row">
+        <view class="control-label">补光灯</view>
+        <switch checked="{{ledOn}}" color="#1f7a62" bindchange="onLedSwitch" />
+      </view>
+
+      <view class="slider-row">
+        <view class="control-label">亮度 {{ledBrightness}}%</view>
+        <slider min="0" max="100" step="1" value="{{ledBrightness}}" activeColor="#1f7a62" bindchange="onBrightnessChange" />
+      </view>
+
+      <view class="switch-row">
+        <view class="control-label">自动分拣</view>
+        <switch checked="{{autoSort}}" color="#1f7a62" bindchange="onAutoSortChange" />
+      </view>
+
+      <view class="button-row">
+        <button class="command-button" wx:for="{{detectOptions}}" wx:key="value" data-value="{{item.value}}" bindtap="onDetectTap">{{item.label}}</button>
+      </view>
+    </view>
+  </scroll-view>
+</view>

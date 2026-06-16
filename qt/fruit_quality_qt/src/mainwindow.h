@@ -3,9 +3,11 @@
 
 #include "sensordatareader.h"
 
+#include <QColor>
 #include <QFrame>
 #include <QGridLayout>
 #include <QLabel>
+#include <QList>
 #include <QMainWindow>
 #include <QPaintEvent>
 #include <QPixmap>
@@ -14,6 +16,7 @@
 #include <QResizeEvent>
 #include <QSlider>
 #include <QStackedWidget>
+#include <QTableWidget>
 #include <QTimer>
 #include <QVector>
 #include <QWidget>
@@ -53,6 +56,38 @@ private:
     double m_aspectRatio;
 };
 
+class DonutChartWidget : public QWidget
+{
+public:
+    explicit DonutChartWidget(QWidget *parent = nullptr);
+
+    void setData(const QVector<double> &values, const QStringList &labels, const QVector<QColor> &colors);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QVector<double> m_values;
+    QStringList m_labels;
+    QVector<QColor> m_colors;
+};
+
+class BarChartWidget : public QWidget
+{
+public:
+    explicit BarChartWidget(QWidget *parent = nullptr);
+
+    void setData(const QVector<double> &values, const QStringList &labels, const QVector<QColor> &colors);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QVector<double> m_values;
+    QStringList m_labels;
+    QVector<QColor> m_colors;
+};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -72,8 +107,12 @@ private slots:
     void showLedControlPage();
     void showMangoQualityPage();
     void showServoControlPage();
+    void showBatchStatsPage();
+    void showMangoHistoryPage();
     void refreshSensorData();
     void refreshMangoQualityData();
+    void refreshBatchStatsData();
+    void refreshMangoHistoryData();
     void readSensorMessages();
     void handleSensorFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void readMangoQualityMessages();
@@ -99,6 +138,7 @@ private slots:
 private:
     QWidget *createStartPage();
     QWidget *createWorkPage();
+    QWidget *createMangoHistoryPage();
     QFrame *createVideoPanel();
     QFrame *createSensorPanel();
     QFrame *createFunctionPlaceholder();
@@ -107,8 +147,11 @@ private:
     QWidget *createLedControlPage();
     QWidget *createMangoQualityPage();
     QWidget *createServoControlPage();
+    QWidget *createBatchStatsPage();
     QLabel *makeSensorNameLabel(const QString &text);
     QLabel *makeSensorValueLabel();
+    QFrame *makeMetricCard(const QString &name, QLabel **valueLabel, const QString &accentName = QString());
+    QFrame *makeFunctionSection(const QString &title, const QList<QPushButton *> &buttons);
     void applyGlobalStyle();
     void updateSensorCards(const SensorSnapshot &snapshot);
     void startSensorProcess();
@@ -122,6 +165,10 @@ private:
     void rescaleCameraFrame();
     void setVideoMessage(const QString &message);
     double currentConveyorSpeed() const;
+    QString currentConveyorGearName() const;
+    void selectConveyorSpeedGear(int gear);
+    void updateConveyorGearButtons();
+    void updateConveyorRunButtons();
     void runMotorCommand(const QString &command);
     void loadConveyorSpeedRange();
     QStringList parseCsvLine(const QString &line) const;
@@ -143,12 +190,19 @@ private:
     QTimer *m_mangoQualityTimer;
     QProcess *m_mangoQualityProcess;
     QProcess *m_cameraProcess;
+    QProcess *m_motorCommandProcess;
     QByteArray m_cameraBuffer;
     QPixmap m_latestFrame;
     SensorDataReader m_sensorReader;
     QSlider *m_conveyorSpeedSlider;
     QLabel *m_conveyorSpeedValueLabel;
     QLabel *m_motorStatusLabel;
+    QPushButton *m_conveyorForwardButton;
+    QPushButton *m_conveyorReverseButton;
+    QPushButton *m_conveyorStopButton;
+    QPushButton *m_conveyorSlowButton;
+    QPushButton *m_conveyorMediumButton;
+    QPushButton *m_conveyorFastButton;
     QSlider *m_ledBrightnessSlider;
     QSlider *m_ledThresholdSlider;
     QLabel *m_ledBrightnessValueLabel;
@@ -163,15 +217,37 @@ private:
     QLabel *m_mangoSugarValueLabel;
     QLabel *m_mangoRotValueLabel;
     QLabel *m_mangoFinalValueLabel;
+    QLabel *m_mangoIdValueLabel;
+    QLabel *m_mangoGradeValueLabel;
+    QLabel *m_mangoChannelValueLabel;
+    QLabel *m_mangoStabilityValueLabel;
     QLabel *m_mangoYoloValueLabel;
     QLabel *m_mangoDataValueLabel;
     QLabel *m_mangoQualityStatusLabel;
     QLabel *m_mangoReasonLabel;
+    QLabel *m_batchTotalValueLabel;
+    QLabel *m_batchSaleableValueLabel;
+    QLabel *m_batchRejectValueLabel;
+    QLabel *m_batchLatestValueLabel;
+    QLabel *m_batchStatusLabel;
+    QLabel *m_batchSummaryLabel;
+    DonutChartWidget *m_batchMaturityChart;
+    BarChartWidget *m_batchGradeChart;
+    BarChartWidget *m_batchChannelChart;
+    QTableWidget *m_historyTable;
+    QLabel *m_historySummaryLabel;
     QLabel *m_servoStatusLabel;
+    QPushButton *m_servoPosition1Button;
+    QPushButton *m_servoPosition2Button;
+    QPushButton *m_servoPosition3Button;
     int m_conveyorDirection;
     int m_conveyorMinSpeedX10;
     int m_conveyorMaxSpeedX10;
     int m_conveyorDefaultSpeedX10;
+    int m_conveyorSpeedGear;
+    double m_conveyorSlowSpeedMs;
+    double m_conveyorMediumSpeedMs;
+    double m_conveyorFastSpeedMs;
     int m_ledCurrentBrightness;
     bool m_ledAutoEnabled;
     bool m_ledWasStarted;

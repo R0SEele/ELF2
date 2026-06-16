@@ -786,3 +786,417 @@ temperature_c,humidity_rh,co2_ppm,light_lux,air_quality_ppm,env_status,timestamp
 26.79,64.22,484,360.00,41.47,正常,2026-06-03 18:15:43,
 26.79,64.30,487,362.50,41.81,正常,2026-06-03 18:15:48,
 26.81,64.34,487,377.50,60.56,正常,2026-06-03 18:15:54,
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:46:23,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:46:40,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:46:56,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:47:12,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:47:29,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:47:45,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:48:02,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:48:18,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:48:34,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:48:51,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:49:07,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:49:24,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:49:40,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:49:57,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:50:13,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:50:29,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:50:48,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:51:04,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:51:20,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:51:58,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:54:40,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:54:57,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:55:13,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:55:29,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54425.83,100.00,部分异常,2026-06-11 20:55:46,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:56:02,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:56:19,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:56:35,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:56:52,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:57:08,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:57:24,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:57:41,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,27105.83,100.00,部分异常,2026-06-11 20:57:57,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:58:14,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:58:30,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:58:46,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:59:17,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:59:34,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 20:59:50,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,54412.50,100.00,部分异常,2026-06-11 21:00:07,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,27105.83,100.00,部分异常,2026-06-11 21:00:23,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,0.00,15.36,部分异常,2026-06-12 15:17:37,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+--,--,--,0.00,15.51,部分异常,2026-06-12 15:17:57,sht30:All attempts failed: Temperature CRC check failed; scd40:All attempts failed: Data-ready CRC check failed
+26.26,45.31,878,--,16.19,部分异常,2026-06-12 16:03:18,gy302:All attempts failed: I2C transaction failed: [Errno 6] No such device or address
+--,--,--,--,12.77,部分异常,2026-06-12 16:11:37,sht30:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out; scd40:I2C write failed: [Errno 110] Connection timed out; gy302:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out
+--,--,--,--,16.43,部分异常,2026-06-12 16:11:44,sht30:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out; scd40:I2C write failed: [Errno 110] Connection timed out; gy302:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out
+--,--,--,--,16.07,部分异常,2026-06-12 16:15:48,sht30:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out; scd40:I2C write failed: [Errno 110] Connection timed out; gy302:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out
+--,--,--,--,12.67,部分异常,2026-06-12 16:15:56,sht30:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out; scd40:I2C write failed: [Errno 110] Connection timed out; gy302:All attempts failed: I2C transaction failed: [Errno 110] Connection timed out
+27.31,47.03,978,--,14.97,部分异常,2026-06-12 16:21:06,gy302:All attempts failed: I2C transaction failed: [Errno 6] No such device or address
+26.04,47.13,797,--,16.83,正常,2026-06-12 16:29:57,
+26.07,46.49,781,--,16.29,正常,2026-06-12 16:30:02,
+26.07,46.21,775,--,15.63,正常,2026-06-12 16:30:07,
+26.13,46.21,767,--,15.73,正常,2026-06-12 16:30:12,
+26.16,46.03,772,--,14.36,正常,2026-06-12 16:30:17,
+26.10,46.00,766,--,15.12,正常,2026-06-12 16:30:22,
+26.09,46.23,762,--,15.85,正常,2026-06-12 16:30:27,
+26.06,46.08,760,--,16.09,正常,2026-06-12 16:30:32,
+26.03,46.05,758,--,15.24,正常,2026-06-12 16:30:37,
+25.99,46.16,758,--,14.26,正常,2026-06-12 16:30:42,
+25.99,48.15,759,--,14.29,正常,2026-06-12 16:30:47,
+25.96,46.95,764,--,13.65,正常,2026-06-12 16:30:52,
+25.97,46.49,773,--,14.97,正常,2026-06-12 16:30:57,
+26.79,51.24,801,--,15.26,正常,2026-06-12 16:48:41,
+26.81,51.03,769,--,16.39,正常,2026-06-12 16:48:46,
+26.82,50.84,745,--,13.75,正常,2026-06-12 16:48:51,
+26.82,50.73,729,--,15.51,正常,2026-06-12 16:48:56,
+26.83,50.73,715,--,15.95,正常,2026-06-12 16:49:01,
+26.89,50.84,666,--,16.09,正常,2026-06-12 16:49:14,
+26.90,50.54,655,--,14.90,正常,2026-06-12 16:49:19,
+26.90,50.39,643,--,15.07,正常,2026-06-12 16:49:24,
+26.86,50.28,625,--,16.02,正常,2026-06-12 16:49:29,
+26.90,50.29,623,--,15.51,正常,2026-06-12 16:49:34,
+26.91,50.39,621,--,15.02,正常,2026-06-12 16:49:39,
+26.97,50.49,618,--,14.51,正常,2026-06-12 16:49:44,
+26.98,50.30,616,--,14.09,正常,2026-06-12 16:49:50,
+27.00,50.15,615,--,14.04,正常,2026-06-12 16:49:55,
+27.07,50.51,611,--,16.29,正常,2026-06-12 16:50:00,
+27.10,50.44,610,--,14.55,正常,2026-06-12 16:50:05,
+27.28,50.28,609,--,14.31,正常,2026-06-12 16:50:10,
+27.41,50.02,607,--,14.11,正常,2026-06-12 16:50:15,
+27.37,49.67,605,--,14.97,正常,2026-06-12 16:50:20,
+27.41,49.40,604,--,16.58,正常,2026-06-12 16:50:25,
+27.41,49.57,600,--,14.51,正常,2026-06-12 16:50:30,
+27.44,49.51,597,--,14.77,正常,2026-06-12 16:50:35,
+27.44,49.47,595,--,17.05,正常,2026-06-12 16:50:40,
+27.48,49.39,593,--,14.38,正常,2026-06-12 16:50:45,
+27.49,49.40,590,--,17.14,正常,2026-06-12 16:50:50,
+27.46,49.14,586,--,15.80,正常,2026-06-12 16:50:55,
+27.49,49.04,583,--,15.07,正常,2026-06-12 16:51:00,
+27.50,49.15,581,--,15.04,正常,2026-06-12 16:51:05,
+27.59,49.18,580,--,15.60,正常,2026-06-12 16:51:10,
+27.76,49.10,578,--,15.07,正常,2026-06-12 16:51:15,
+27.73,48.84,578,--,16.19,正常,2026-06-12 16:51:20,
+27.79,48.79,577,--,16.21,正常,2026-06-12 16:51:25,
+27.79,48.74,576,--,16.14,正常,2026-06-12 16:51:30,
+27.80,48.69,576,--,14.99,正常,2026-06-12 16:51:35,
+27.77,48.66,575,--,16.43,正常,2026-06-12 16:51:40,
+27.79,48.70,573,--,13.99,正常,2026-06-12 16:51:45,
+27.79,48.74,572,--,14.33,正常,2026-06-12 16:51:50,
+27.77,48.76,572,--,15.70,正常,2026-06-12 16:51:55,
+27.84,48.54,572,--,15.09,正常,2026-06-12 16:52:00,
+27.84,48.39,571,--,16.36,正常,2026-06-12 16:52:05,
+27.94,48.28,570,--,15.19,正常,2026-06-12 16:52:10,
+27.98,48.15,570,--,16.26,正常,2026-06-12 16:52:15,
+27.98,48.08,569,--,16.51,正常,2026-06-12 16:52:20,
+28.04,48.23,568,--,14.80,正常,2026-06-12 16:52:25,
+28.01,48.07,568,--,15.90,正常,2026-06-12 16:52:30,
+28.04,48.27,566,--,17.39,正常,2026-06-12 16:52:36,
+28.08,48.12,564,--,14.99,正常,2026-06-12 16:52:41,
+28.09,48.15,564,--,17.78,正常,2026-06-12 16:52:46,
+28.13,48.10,565,--,14.53,正常,2026-06-12 16:52:51,
+28.11,47.63,563,--,15.38,正常,2026-06-12 16:52:56,
+28.12,47.54,563,--,17.36,正常,2026-06-12 16:53:01,
+28.09,47.55,558,--,16.00,正常,2026-06-12 16:53:06,
+28.13,48.44,553,--,16.24,正常,2026-06-12 16:53:11,
+28.13,47.89,553,--,14.58,正常,2026-06-12 16:53:16,
+28.22,47.67,553,--,16.07,正常,2026-06-12 16:53:21,
+28.32,47.28,551,--,13.94,正常,2026-06-12 16:53:26,
+28.38,47.07,547,--,16.21,正常,2026-06-12 16:53:31,
+28.39,47.00,547,--,17.39,正常,2026-06-12 16:53:36,
+28.54,46.81,545,--,15.60,正常,2026-06-12 16:53:41,
+28.74,46.41,545,--,14.82,正常,2026-06-12 16:53:46,
+28.67,46.34,542,--,15.87,正常,2026-06-12 16:53:51,
+28.65,46.42,539,--,15.80,正常,2026-06-12 16:53:56,
+28.64,46.35,536,--,16.36,正常,2026-06-12 16:54:01,
+28.63,46.29,536,--,15.14,正常,2026-06-12 16:54:06,
+28.58,46.31,534,--,16.31,正常,2026-06-12 16:54:11,
+28.56,46.33,534,--,16.65,正常,2026-06-12 16:54:16,
+28.50,46.35,534,--,16.12,正常,2026-06-12 16:54:21,
+28.49,46.35,533,--,16.26,正常,2026-06-12 16:54:26,
+28.49,46.41,533,--,15.80,正常,2026-06-12 16:54:31,
+28.46,46.47,533,--,16.00,正常,2026-06-12 16:54:36,
+28.47,46.52,533,--,16.46,正常,2026-06-12 16:54:41,
+28.47,46.57,533,--,15.07,正常,2026-06-12 16:54:46,
+28.49,46.67,534,--,15.02,正常,2026-06-12 16:54:51,
+28.50,46.69,534,--,16.43,正常,2026-06-12 16:54:56,
+28.51,46.70,533,--,16.48,正常,2026-06-12 16:55:01,
+28.64,46.64,533,--,14.65,正常,2026-06-12 16:55:06,
+28.68,46.42,532,--,18.00,正常,2026-06-12 16:55:11,
+28.65,46.44,531,--,14.85,正常,2026-06-12 16:55:17,
+28.64,46.39,531,--,15.38,正常,2026-06-12 16:55:22,
+28.68,46.41,531,--,15.21,正常,2026-06-12 16:55:27,
+28.64,46.35,530,--,15.92,正常,2026-06-12 16:55:32,
+28.67,46.34,530,--,16.58,正常,2026-06-12 16:55:37,
+28.58,46.36,530,--,16.92,正常,2026-06-12 16:55:42,
+28.51,46.54,529,--,16.39,正常,2026-06-12 16:55:47,
+28.46,46.60,527,--,15.90,正常,2026-06-12 16:55:52,
+28.56,46.77,527,--,16.19,正常,2026-06-12 16:55:57,
+28.57,46.70,527,--,15.02,正常,2026-06-12 16:56:02,
+28.56,46.71,527,--,15.34,正常,2026-06-12 16:56:07,
+28.53,46.74,527,--,15.09,正常,2026-06-12 16:56:12,
+28.53,46.73,527,--,16.53,正常,2026-06-12 16:56:17,
+28.50,46.83,526,--,17.80,正常,2026-06-12 16:56:22,
+28.56,46.71,525,--,16.26,正常,2026-06-12 16:56:27,
+29.05,46.39,525,--,16.12,正常,2026-06-12 16:56:32,
+29.26,45.63,520,--,15.73,正常,2026-06-12 16:56:37,
+29.12,45.10,520,--,15.80,正常,2026-06-12 16:56:42,
+29.13,45.16,521,--,14.75,正常,2026-06-12 16:56:47,
+29.16,45.22,521,--,16.24,正常,2026-06-12 16:56:52,
+29.06,45.70,522,--,16.48,正常,2026-06-12 16:56:57,
+29.09,46.38,527,--,15.31,正常,2026-06-12 16:57:02,
+29.03,46.95,541,--,17.14,正常,2026-06-12 16:57:07,
+29.02,46.41,565,--,14.38,正常,2026-06-12 16:57:12,
+28.99,45.91,586,--,15.04,正常,2026-06-12 16:57:17,
+28.94,45.78,597,--,16.12,正常,2026-06-12 16:57:22,
+28.89,45.84,606,--,16.26,正常,2026-06-12 16:57:27,
+29.02,45.80,608,--,15.04,正常,2026-06-12 16:57:32,
+28.98,45.73,611,--,16.97,正常,2026-06-12 16:57:37,
+29.09,45.73,611,--,16.92,正常,2026-06-12 16:57:42,
+29.16,45.58,611,--,15.90,正常,2026-06-12 16:57:47,
+29.14,45.43,610,--,16.56,正常,2026-06-12 16:57:52,
+29.14,45.28,610,--,16.51,正常,2026-06-12 16:57:57,
+29.10,45.27,610,--,17.26,正常,2026-06-12 16:58:03,
+29.09,45.36,609,--,17.46,正常,2026-06-12 16:58:08,
+29.06,45.46,609,--,15.63,正常,2026-06-12 16:58:13,
+29.03,45.40,609,--,15.19,正常,2026-06-12 16:58:18,
+29.01,45.44,608,--,15.60,正常,2026-06-12 16:58:23,
+29.02,45.43,605,--,14.99,正常,2026-06-12 16:58:28,
+28.98,45.46,597,--,16.19,正常,2026-06-12 16:58:33,
+28.96,45.55,593,--,17.90,正常,2026-06-12 16:58:38,
+28.96,45.61,591,--,16.19,正常,2026-06-12 16:58:43,
+28.94,45.60,589,--,16.58,正常,2026-06-12 16:58:48,
+28.91,45.75,584,--,16.26,正常,2026-06-12 16:58:53,
+28.89,45.87,582,--,17.34,正常,2026-06-12 16:58:58,
+28.87,45.96,579,--,16.87,正常,2026-06-12 16:59:03,
+28.91,45.85,577,--,16.78,正常,2026-06-12 16:59:08,
+28.88,45.79,573,--,16.21,正常,2026-06-12 16:59:13,
+28.87,45.90,572,--,15.90,正常,2026-06-12 16:59:18,
+28.87,45.82,567,--,17.02,正常,2026-06-12 16:59:23,
+28.83,45.91,564,--,15.26,正常,2026-06-12 16:59:28,
+28.83,45.98,563,--,16.68,正常,2026-06-12 16:59:33,
+28.82,45.96,559,--,15.41,正常,2026-06-12 16:59:38,
+28.83,45.98,558,--,17.51,正常,2026-06-12 16:59:43,
+28.82,46.05,554,--,15.97,正常,2026-06-12 16:59:48,
+28.79,46.11,552,--,16.85,正常,2026-06-12 16:59:53,
+28.83,46.15,549,--,17.73,正常,2026-06-12 16:59:58,
+28.82,46.23,548,--,15.82,正常,2026-06-12 17:00:03,
+28.85,46.19,546,--,15.87,正常,2026-06-12 17:00:08,
+28.85,46.07,542,--,15.78,正常,2026-06-12 17:00:13,
+28.88,45.89,539,--,16.78,正常,2026-06-12 17:00:18,
+28.87,45.85,536,--,16.92,正常,2026-06-12 17:00:23,
+28.89,45.88,535,--,16.07,正常,2026-06-12 17:00:28,
+28.89,45.84,533,--,15.31,正常,2026-06-12 17:00:33,
+28.91,45.95,533,--,16.46,正常,2026-06-12 17:00:38,
+29.12,46.07,531,--,16.92,正常,2026-06-12 17:00:43,
+29.20,45.87,530,--,16.85,正常,2026-06-12 17:00:48,
+29.29,45.56,526,--,17.02,正常,2026-06-12 17:00:54,
+29.27,45.37,523,--,16.73,正常,2026-06-12 17:00:59,
+29.29,45.29,517,--,15.26,正常,2026-06-12 17:01:04,
+29.24,45.41,512,--,15.78,正常,2026-06-12 17:01:09,
+29.24,45.30,510,--,15.75,正常,2026-06-12 17:01:14,
+29.27,45.20,506,--,15.02,正常,2026-06-12 17:01:19,
+29.31,45.22,506,--,17.70,正常,2026-06-12 17:01:24,
+29.31,45.26,505,--,17.80,正常,2026-06-12 17:01:29,
+29.34,45.34,503,--,14.53,正常,2026-06-12 17:01:34,
+29.34,45.36,503,--,16.48,正常,2026-06-12 17:01:39,
+29.34,45.40,502,--,16.43,正常,2026-06-12 17:01:44,
+29.34,45.08,503,--,17.44,正常,2026-06-12 17:01:49,
+29.34,45.07,503,--,14.51,正常,2026-06-12 17:01:54,
+29.34,44.91,503,--,16.75,正常,2026-06-12 17:01:59,
+29.31,44.93,504,--,16.65,正常,2026-06-12 17:02:04,
+29.30,44.86,505,--,15.21,正常,2026-06-12 17:02:09,
+29.27,45.02,504,--,15.58,正常,2026-06-12 17:02:14,
+29.24,45.00,505,--,15.36,正常,2026-06-12 17:02:19,
+29.26,44.99,505,--,16.31,正常,2026-06-12 17:02:24,
+29.26,44.92,504,--,16.80,正常,2026-06-12 17:02:29,
+29.24,44.77,505,--,14.95,正常,2026-06-12 17:02:34,
+29.26,44.78,505,--,15.04,正常,2026-06-12 17:02:39,
+29.24,44.79,505,--,14.99,正常,2026-06-12 17:02:44,
+29.24,44.84,506,--,15.60,正常,2026-06-12 17:02:49,
+29.23,44.87,506,--,16.31,正常,2026-06-12 17:02:54,
+29.23,45.49,506,--,16.92,正常,2026-06-12 17:02:59,
+29.33,45.22,509,--,18.19,正常,2026-06-12 17:03:04,
+29.34,45.16,513,--,16.41,正常,2026-06-12 17:03:09,
+29.65,45.06,515,--,14.73,正常,2026-06-12 17:03:14,
+29.57,44.90,518,--,15.80,正常,2026-06-12 17:03:19,
+29.55,44.78,520,--,15.21,正常,2026-06-12 17:03:24,
+29.52,44.79,520,--,15.90,正常,2026-06-12 17:03:29,
+29.51,44.64,521,--,17.05,正常,2026-06-12 17:03:34,
+29.47,44.68,521,--,18.05,正常,2026-06-12 17:03:40,
+29.45,44.72,522,--,15.82,正常,2026-06-12 17:03:45,
+29.47,44.68,522,--,16.19,正常,2026-06-12 17:03:50,
+29.44,44.78,522,--,17.26,正常,2026-06-12 17:03:55,
+29.44,45.39,522,--,16.58,正常,2026-06-12 17:04:00,
+29.40,45.36,523,--,16.26,正常,2026-06-12 17:04:05,
+29.48,45.34,528,--,16.95,正常,2026-06-12 17:04:10,
+29.50,45.34,536,--,16.58,正常,2026-06-12 17:04:15,
+29.47,45.30,542,--,15.36,正常,2026-06-12 17:04:20,
+29.60,45.26,545,--,15.12,正常,2026-06-12 17:04:25,
+29.65,44.98,549,--,15.53,正常,2026-06-12 17:04:30,
+29.69,44.86,548,--,16.14,正常,2026-06-12 17:04:35,
+29.71,44.81,552,--,16.53,正常,2026-06-12 17:04:40,
+29.68,44.67,554,--,16.17,正常,2026-06-12 17:04:45,
+29.69,44.71,554,--,15.53,正常,2026-06-12 17:04:50,
+29.65,44.75,554,--,16.39,正常,2026-06-12 17:04:55,
+29.65,44.65,553,--,15.34,正常,2026-06-12 17:05:00,
+29.65,44.63,553,--,16.51,正常,2026-06-12 17:05:05,
+29.62,44.56,553,--,16.78,正常,2026-06-12 17:05:10,
+29.57,44.24,553,--,14.63,正常,2026-06-12 17:05:15,
+--,--,--,--,74.92,部分异常,2026-06-12 19:20:21,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.90,部分异常,2026-06-12 19:20:40,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.92,部分异常,2026-06-12 19:20:46,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.12,部分异常,2026-06-12 19:20:52,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.90,部分异常,2026-06-12 19:20:57,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.92,部分异常,2026-06-12 19:45:29,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.80,部分异常,2026-06-12 19:45:34,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.85,部分异常,2026-06-12 19:45:40,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.92,部分异常,2026-06-12 20:04:16,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.82,部分异常,2026-06-12 20:04:22,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.87,部分异常,2026-06-12 20:04:27,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.92,部分异常,2026-06-12 20:04:33,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.04,部分异常,2026-06-12 20:04:39,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.82,部分异常,2026-06-12 20:04:44,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.82,部分异常,2026-06-12 20:04:50,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.16,部分异常,2026-06-12 20:04:56,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.75,部分异常,2026-06-12 20:05:01,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.90,部分异常,2026-06-12 20:05:07,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.16,部分异常,2026-06-12 20:05:13,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.97,部分异常,2026-06-12 20:05:18,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.95,部分异常,2026-06-12 20:05:24,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.16,部分异常,2026-06-12 20:05:29,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.09,部分异常,2026-06-12 20:05:35,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.07,部分异常,2026-06-12 20:05:41,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.12,部分异常,2026-06-12 20:05:46,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.04,部分异常,2026-06-12 20:05:52,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.95,部分异常,2026-06-12 20:05:58,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.02,部分异常,2026-06-12 20:06:03,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.26,部分异常,2026-06-12 20:12:38,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.19,部分异常,2026-06-12 20:12:44,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.34,部分异常,2026-06-12 20:12:49,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.65,部分异常,2026-06-12 20:12:55,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.14,部分异常,2026-06-12 20:13:01,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.12,部分异常,2026-06-12 20:13:06,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.87,部分异常,2026-06-12 20:13:12,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.51,部分异常,2026-06-12 20:13:17,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.77,部分异常,2026-06-12 20:13:23,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.58,部分异常,2026-06-12 20:13:29,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.63,部分异常,2026-06-12 20:13:34,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.77,部分异常,2026-06-12 20:13:40,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.75,部分异常,2026-06-12 20:13:46,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.80,部分异常,2026-06-12 20:13:51,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.43,部分异常,2026-06-12 20:13:57,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.75,部分异常,2026-06-12 20:14:03,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.80,部分异常,2026-06-12 20:14:08,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.73,部分异常,2026-06-12 20:14:14,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.36,部分异常,2026-06-12 20:14:20,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.70,部分异常,2026-06-12 20:14:25,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.70,部分异常,2026-06-12 20:14:31,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.70,部分异常,2026-06-12 20:14:37,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.70,部分异常,2026-06-12 20:14:42,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.75,部分异常,2026-06-12 20:14:48,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.63,部分异常,2026-06-12 20:14:54,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.63,部分异常,2026-06-12 20:14:59,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 20:15:05,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.82,部分异常,2026-06-12 20:15:11,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 20:15:16,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.85,部分异常,2026-06-12 20:15:22,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.63,部分异常,2026-06-12 20:15:28,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.55,部分异常,2026-06-12 20:15:33,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.70,部分异常,2026-06-12 20:15:39,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.73,部分异常,2026-06-12 20:15:45,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.51,部分异常,2026-06-12 20:15:50,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.51,部分异常,2026-06-12 20:15:56,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.85,部分异常,2026-06-12 20:16:02,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.29,部分异常,2026-06-12 20:16:07,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.77,部分异常,2026-06-12 20:16:10,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.11,部分异常,2026-06-12 20:16:13,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.97,部分异常,2026-06-12 20:16:18,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.82,部分异常,2026-06-12 20:16:24,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.80,部分异常,2026-06-12 20:16:29,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.82,部分异常,2026-06-12 20:16:35,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.80,部分异常,2026-06-12 20:16:41,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.75,部分异常,2026-06-12 20:16:46,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.55,部分异常,2026-06-12 20:16:52,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 20:16:58,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 20:17:03,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.48,部分异常,2026-06-12 20:17:09,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.70,部分异常,2026-06-12 20:17:15,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.55,部分异常,2026-06-12 20:17:20,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.58,部分异常,2026-06-12 20:17:26,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.41,部分异常,2026-06-12 20:17:32,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.60,部分异常,2026-06-12 20:17:37,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.75,部分异常,2026-06-12 20:17:43,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.65,部分异常,2026-06-12 20:17:49,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.55,部分异常,2026-06-12 20:17:54,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 20:18:00,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.80,部分异常,2026-06-12 20:18:06,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.73,部分异常,2026-06-12 20:18:11,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 20:18:17,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.55,部分异常,2026-06-12 20:18:23,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.65,部分异常,2026-06-12 20:18:28,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.73,部分异常,2026-06-12 20:18:34,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.73,部分异常,2026-06-12 20:18:40,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.65,部分异常,2026-06-12 20:18:45,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.48,部分异常,2026-06-12 20:18:51,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.41,部分异常,2026-06-12 20:18:57,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.48,部分异常,2026-06-12 20:19:02,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.58,部分异常,2026-06-12 20:19:08,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.63,部分异常,2026-06-12 20:19:14,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.53,部分异常,2026-06-12 20:31:34,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.92,部分异常,2026-06-12 20:31:39,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.63,部分异常,2026-06-12 20:31:45,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,73.99,部分异常,2026-06-12 20:36:30,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.77,部分异常,2026-06-12 20:38:27,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.07,部分异常,2026-06-12 20:38:33,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.09,部分异常,2026-06-12 20:38:39,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.87,部分异常,2026-06-12 20:38:45,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.58,部分异常,2026-06-12 20:50:21,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.65,部分异常,2026-06-12 20:50:27,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.38,部分异常,2026-06-12 20:50:33,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.95,部分异常,2026-06-12 20:50:38,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.95,部分异常,2026-06-12 20:50:44,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.04,部分异常,2026-06-12 20:50:50,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.92,部分异常,2026-06-12 20:50:55,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,75.09,部分异常,2026-06-12 20:51:01,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.53,部分异常,2026-06-12 21:12:25,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.55,部分异常,2026-06-12 21:12:31,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.85,部分异常,2026-06-12 21:12:37,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,74.68,部分异常,2026-06-12 21:12:42,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,73.43,部分异常,2026-06-12 21:13:28,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+--,--,--,--,73.53,部分异常,2026-06-12 21:13:34,sht30:All attempts failed: I2C transaction failed: [Errno 6] No such device or address; scd40:I2C write failed: [Errno 6] No such device or address
+24.46,62.50,998,--,16.95,正常,2026-06-14 14:39:27,
+24.88,61.22,985,--,16.90,正常,2026-06-14 14:40:21,
+24.97,62.09,969,--,16.46,正常,2026-06-14 14:40:26,
+25.77,59.30,799,58.33,13.33,正常,2026-06-14 14:46:53,
+25.89,58.12,788,69.17,14.60,正常,2026-06-14 14:46:58,
+26.03,57.66,792,140.83,13.85,正常,2026-06-14 14:47:04,
+26.07,57.87,796,140.00,14.65,正常,2026-06-14 14:47:09,
+25.99,57.47,800,140.00,15.16,正常,2026-06-14 14:47:14,
+26.02,57.23,798,140.00,15.02,正常,2026-06-14 14:47:19,
+26.10,57.03,797,871.67,13.28,正常,2026-06-14 14:47:25,
+26.12,56.85,793,616.67,13.50,正常,2026-06-14 14:47:30,
+26.19,56.65,792,141.67,13.02,正常,2026-06-14 14:47:35,
+26.10,56.61,789,138.33,14.19,正常,2026-06-14 14:47:40,
+26.12,57.97,788,137.50,14.65,正常,2026-06-14 14:47:45,
+26.28,58.70,788,137.50,15.48,正常,2026-06-14 14:47:51,
+26.35,59.46,794,137.50,15.58,正常,2026-06-14 14:47:56,
+26.34,57.94,800,137.50,14.99,正常,2026-06-14 14:48:01,
+26.42,58.29,806,137.50,14.33,正常,2026-06-14 14:48:06,
+26.40,58.64,821,138.33,13.85,正常,2026-06-14 14:48:11,
+26.44,57.67,835,69.17,12.92,正常,2026-06-14 14:48:17,
+26.38,56.55,840,98.33,14.48,正常,2026-06-14 14:48:22,
+26.41,55.45,847,140.00,13.11,正常,2026-06-14 14:48:36,
+25.48,56.88,709,79.17,14.36,正常,2026-06-14 14:55:23,
+25.74,58.32,706,90.83,15.65,正常,2026-06-14 14:55:28,
+25.79,62.48,693,93.33,16.56,正常,2026-06-14 14:55:33,
+25.84,63.03,691,14.17,17.24,正常,2026-06-14 14:55:38,
+25.93,62.11,703,2.50,15.07,正常,2026-06-14 14:55:43,
+26.02,59.35,707,68.33,14.19,正常,2026-06-14 14:55:49,
+26.09,56.73,747,115.83,14.53,正常,2026-06-14 14:56:01,
+26.91,57.56,893,87.50,15.12,正常,2026-06-14 15:41:57,
+26.98,59.48,877,120.83,14.58,正常,2026-06-14 15:42:02,
+27.10,58.21,854,61.67,14.82,正常,2026-06-14 15:42:07,
+27.13,58.07,878,59.17,13.43,正常,2026-06-14 15:42:12,

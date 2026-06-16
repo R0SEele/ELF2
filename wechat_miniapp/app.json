@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "芒果智检分拣终端",
+    "navigationBarBackgroundColor": "#1f4f46",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f7f6"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

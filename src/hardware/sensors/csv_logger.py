@@ -81,6 +81,8 @@ def _build_row(readings, scd40_cache=None, scd40_cache_max_age_s=20.0):
 
     errors = []
     for name, payload in readings.items():
+        if payload.get("disabled"):
+            continue
         if name == "scd40" and scd40_using_cache:
             continue
         if not payload.get("ok"):

@@ -1,20 +1,25 @@
 #include "mainwindow.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QFile>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLayout>
 #include <QPainter>
 #include <QPixmap>
 #include <QResizeEvent>
+#include <QScrollArea>
 #include <QSizePolicy>
 #include <QSpacerItem>
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <QtGlobal>
+
+#include <numeric>
 
 namespace {
 const char *kSensorCsvDirectory = "/home/elf/projects/datas/csv";
@@ -27,6 +32,8 @@ const char *kServoCommandScript = "/home/elf/projects/src/hardware/servo/sorter.
 const char *kMotorConfigFile = "/home/elf/projects/config/motor.yaml";
 const char *kSensorCsvFile = "/home/elf/projects/datas/csv/sensor_realtime.csv";
 const char *kMangoQualityCsvFile = "/home/elf/projects/datas/csv/mango_quality_realtime.csv";
+const char *kMangoBatchCsvFile = "/home/elf/projects/datas/csv/mango_batch_summary.csv";
+const char *kMangoHistoryCsvFile = "/home/elf/projects/datas/csv/mango_quality_history.csv";
 const int kEnvironmentSampleIntervalS = 5;
 const int kSensorRefreshIntervalMs = 5000;
 const int kLedAutoIntervalMs = 5000;
@@ -113,7 +120,7 @@ void VideoDisplayWidget::paintEvent(QPaintEvent *event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.fillRect(rect(), QColor("#142418"));
+    painter.fillRect(rect(), QColor("#0B0F14"));
 
     if (!m_frame.isNull()) {
         const QSize targetSize = rect().size();
@@ -128,7 +135,7 @@ void VideoDisplayWidget::paintEvent(QPaintEvent *event)
         return;
     }
 
-    painter.setPen(QColor("#d7f5cf"));
+    painter.setPen(QColor("#F2F2F7"));
     QFont font = painter.font();
     font.setPointSize(24);
     font.setBold(true);
@@ -199,6 +206,153 @@ void AspectRatioVideoFrame::updateContentGeometry()
     m_content->setGeometry(x, y, contentW, contentH);
 }
 
+DonutChartWidget::DonutChartWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    setObjectName("chartCanvas");
+    setMinimumHeight(142);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void DonutChartWidget::setData(const QVector<double> &values, const QStringList &labels, const QVector<QColor> &colors)
+{
+    m_values = values;
+    m_labels = labels;
+    m_colors = colors;
+    update();
+}
+
+void DonutChartWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(QColor("#DDE6F2"), 1));
+    painter.setBrush(QColor("#ffffff"));
+    painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 7, 7);
+
+    const int side = qMax(64, qMin(static_cast<int>(width() * 0.45), height() - 14));
+    const QRectF pieRect(10, (height() - side) / 2.0, side, side);
+    const double total = std::accumulate(m_values.begin(), m_values.end(), 0.0);
+
+    painter.setPen(Qt::NoPen);
+    if (total <= 0.0) {
+        painter.setBrush(QColor("#E8EEF7"));
+        painter.drawEllipse(pieRect);
+    } else {
+        int startAngle = 90 * 16;
+        for (int i = 0; i < m_values.size(); ++i) {
+            const int spanAngle = -qRound(m_values.at(i) * 360.0 * 16.0 / total);
+            painter.setBrush(i < m_colors.size() ? m_colors.at(i) : QColor("#9CA3AF"));
+            painter.drawPie(pieRect, startAngle, spanAngle);
+            startAngle += spanAngle;
+        }
+    }
+
+    painter.setBrush(QColor("#ffffff"));
+    painter.drawEllipse(pieRect.adjusted(side * 0.26, side * 0.26, -side * 0.26, -side * 0.26));
+
+    painter.setPen(QColor("#111827"));
+    QFont centerFont = painter.font();
+    centerFont.setPointSize(17);
+    centerFont.setBold(true);
+    painter.setFont(centerFont);
+    painter.drawText(pieRect, Qt::AlignCenter, QString::number(static_cast<int>(total)));
+
+    QFont labelFont = painter.font();
+    labelFont.setPointSize(10);
+    labelFont.setBold(false);
+    painter.setFont(labelFont);
+    const int legendX = pieRect.right() + 18;
+    int legendY = qMax(16, (height() - m_labels.size() * 24) / 2);
+    for (int i = 0; i < m_labels.size(); ++i) {
+        const QColor color = i < m_colors.size() ? m_colors.at(i) : QColor("#9CA3AF");
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(color);
+        painter.drawRoundedRect(QRectF(legendX, legendY + 4, 12, 12), 3, 3);
+        painter.setPen(QColor("#374151"));
+        const int value = i < m_values.size() ? qRound(m_values.at(i)) : 0;
+        painter.drawText(QRect(legendX + 18, legendY, width() - legendX - 20, 20),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         QString("%1  %2").arg(m_labels.at(i)).arg(value));
+        legendY += 24;
+    }
+}
+
+BarChartWidget::BarChartWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    setObjectName("chartCanvas");
+    setMinimumHeight(128);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void BarChartWidget::setData(const QVector<double> &values, const QStringList &labels, const QVector<QColor> &colors)
+{
+    m_values = values;
+    m_labels = labels;
+    m_colors = colors;
+    update();
+}
+
+void BarChartWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(QColor("#DDE6F2"), 1));
+    painter.setBrush(QColor("#ffffff"));
+    painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 7, 7);
+
+    const int count = qMin(m_values.size(), m_labels.size());
+    if (count <= 0) {
+        return;
+    }
+
+    double maxValue = 1.0;
+    for (double value : m_values) {
+        maxValue = qMax(maxValue, value);
+    }
+
+    const int left = 12;
+    const int right = width() - 12;
+    const int top = 10;
+    const int bottom = height() - 26;
+    const int availableW = qMax(1, right - left);
+    const int gap = 8;
+    const int barW = qMax(10, (availableW - gap * (count - 1)) / count);
+
+    QFont valueFont = painter.font();
+    valueFont.setPointSize(10);
+    valueFont.setBold(true);
+    painter.setFont(valueFont);
+
+    for (int i = 0; i < count; ++i) {
+        const int x = left + i * (barW + gap);
+        const int barH = qRound((bottom - top) * (m_values.at(i) / maxValue));
+        const QRectF barRect(x, bottom - barH, barW, barH);
+        const QColor color = i < m_colors.size() ? m_colors.at(i) : QColor("#6B7280");
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor("#EEF4FB"));
+        painter.drawRoundedRect(QRectF(x, top, barW, bottom - top), 5, 5);
+        painter.setBrush(color);
+        painter.drawRoundedRect(barRect, 5, 5);
+
+        painter.setPen(QColor("#111827"));
+        painter.drawText(QRect(x, qMax(0, static_cast<int>(barRect.top()) - 20), barW, 18),
+                         Qt::AlignCenter,
+                         QString::number(qRound(m_values.at(i))));
+
+        painter.setPen(QColor("#4B5563"));
+        painter.drawText(QRect(x - 4, bottom + 4, barW + 8, 20),
+                         Qt::AlignCenter,
+                         m_labels.at(i));
+    }
+}
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
       m_pages(new QStackedWidget(this)),
@@ -213,10 +367,17 @@ MainWindow::MainWindow(QWidget *parent)
       m_mangoQualityTimer(new QTimer(this)),
       m_mangoQualityProcess(new QProcess(this)),
       m_cameraProcess(new QProcess(this)),
+      m_motorCommandProcess(new QProcess(this)),
       m_sensorReader(kSensorCsvFile),
       m_conveyorSpeedSlider(nullptr),
       m_conveyorSpeedValueLabel(nullptr),
       m_motorStatusLabel(nullptr),
+      m_conveyorForwardButton(nullptr),
+      m_conveyorReverseButton(nullptr),
+      m_conveyorStopButton(nullptr),
+      m_conveyorSlowButton(nullptr),
+      m_conveyorMediumButton(nullptr),
+      m_conveyorFastButton(nullptr),
       m_ledBrightnessSlider(nullptr),
       m_ledThresholdSlider(nullptr),
       m_ledBrightnessValueLabel(nullptr),
@@ -231,15 +392,37 @@ MainWindow::MainWindow(QWidget *parent)
       m_mangoSugarValueLabel(nullptr),
       m_mangoRotValueLabel(nullptr),
       m_mangoFinalValueLabel(nullptr),
+      m_mangoIdValueLabel(nullptr),
+      m_mangoGradeValueLabel(nullptr),
+      m_mangoChannelValueLabel(nullptr),
+      m_mangoStabilityValueLabel(nullptr),
       m_mangoYoloValueLabel(nullptr),
       m_mangoDataValueLabel(nullptr),
       m_mangoQualityStatusLabel(nullptr),
       m_mangoReasonLabel(nullptr),
+      m_batchTotalValueLabel(nullptr),
+      m_batchSaleableValueLabel(nullptr),
+      m_batchRejectValueLabel(nullptr),
+      m_batchLatestValueLabel(nullptr),
+      m_batchStatusLabel(nullptr),
+      m_batchSummaryLabel(nullptr),
+      m_batchMaturityChart(nullptr),
+      m_batchGradeChart(nullptr),
+      m_batchChannelChart(nullptr),
+      m_historyTable(nullptr),
+      m_historySummaryLabel(nullptr),
       m_servoStatusLabel(nullptr),
+      m_servoPosition1Button(nullptr),
+      m_servoPosition2Button(nullptr),
+      m_servoPosition3Button(nullptr),
       m_conveyorDirection(0),
       m_conveyorMinSpeedX10(1),
       m_conveyorMaxSpeedX10(10),
       m_conveyorDefaultSpeedX10(5),
+      m_conveyorSpeedGear(0),
+      m_conveyorSlowSpeedMs(0.10),
+      m_conveyorMediumSpeedMs(0.13),
+      m_conveyorFastSpeedMs(0.16),
       m_ledCurrentBrightness(40),
       m_ledAutoEnabled(false),
       m_ledWasStarted(false),
@@ -256,6 +439,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_pages->addWidget(createStartPage());
     m_pages->addWidget(createWorkPage());
+    m_pages->addWidget(createMangoHistoryPage());
     m_pages->setCurrentIndex(0);
 
     connect(m_sensorTimer, &QTimer::timeout, this, &MainWindow::refreshSensorData);
@@ -306,6 +490,10 @@ void MainWindow::shutdownHardware()
     stopMangoQualityProcess();
     stopSensorProcess();
     stopCameraProcess();
+    if (m_motorCommandProcess->state() != QProcess::NotRunning) {
+        m_motorCommandProcess->kill();
+        m_motorCommandProcess->waitForFinished(500);
+    }
 }
 
 void MainWindow::showWorkPage()
@@ -330,6 +518,12 @@ void MainWindow::showStartPage()
     m_sensorTimer->stop();
     m_pages->setCurrentIndex(0);
     m_shutdownDone = false;
+}
+
+void MainWindow::showMangoHistoryPage()
+{
+    refreshMangoHistoryData();
+    m_pages->setCurrentIndex(2);
 }
 
 void MainWindow::showFunctionHomePage()
@@ -365,8 +559,16 @@ void MainWindow::showMangoQualityPage()
 void MainWindow::showServoControlPage()
 {
     if (m_functionPages) {
+        m_functionPages->setCurrentIndex(5);
+    }
+}
+
+void MainWindow::showBatchStatsPage()
+{
+    if (m_functionPages) {
         m_functionPages->setCurrentIndex(4);
     }
+    refreshBatchStatsData();
 }
 
 void MainWindow::refreshSensorData()
@@ -377,6 +579,7 @@ void MainWindow::refreshSensorData()
 void MainWindow::refreshMangoQualityData()
 {
     if (!m_mangoMaturityValueLabel) {
+        refreshBatchStatsData();
         return;
     }
 
@@ -386,6 +589,10 @@ void MainWindow::refreshMangoQualityData()
         m_mangoSugarValueLabel->setText("--");
         m_mangoRotValueLabel->setText("--");
         m_mangoFinalValueLabel->setText("--");
+        m_mangoIdValueLabel->setText("--");
+        m_mangoGradeValueLabel->setText("--");
+        m_mangoChannelValueLabel->setText("--");
+        m_mangoStabilityValueLabel->setText("--");
         m_mangoYoloValueLabel->setText("--");
         m_mangoDataValueLabel->setText("等待融合结果");
         if (m_mangoQualityStatusLabel) {
@@ -439,6 +646,11 @@ void MainWindow::refreshMangoQualityData()
     const QString rot = valueFor("rot_status");
     const QString rotScore = valueFor("rot_score", QString());
     const QString finalStatus = valueFor("final_status");
+    const QString mangoId = valueFor("mango_id", "--");
+    const QString qualityGrade = valueFor("quality_grade", "--");
+    const QString suggestedChannel = valueFor("suggested_channel", "--");
+    const QString stableFrames = valueFor("stable_frames", QString());
+    const QString consistency = valueFor("consistency_label", QString());
     const QString yoloLabel = valueFor("yolo_label", "未检测到");
     const QString yoloConfidence = valueFor("yolo_confidence", QString());
     const QString dataStatus = valueFor("data_status", "等待数据");
@@ -449,6 +661,16 @@ void MainWindow::refreshMangoQualityData()
     m_mangoSugarValueLabel->setText(brixRange.isEmpty() ? sugar : QString("%1  %2").arg(sugar, brixRange));
     m_mangoRotValueLabel->setText(rotScore.isEmpty() ? rot : QString("%1  %2分").arg(rot, rotScore));
     m_mangoFinalValueLabel->setText(finalStatus);
+    m_mangoIdValueLabel->setText(mangoId == "--" ? "--" : QString("#%1").arg(mangoId));
+    m_mangoGradeValueLabel->setText(qualityGrade);
+    m_mangoChannelValueLabel->setText(suggestedChannel);
+    if (stableFrames.isEmpty() && consistency.isEmpty()) {
+        m_mangoStabilityValueLabel->setText("--");
+    } else {
+        m_mangoStabilityValueLabel->setText(QString("%1  连续%2帧")
+                                            .arg(consistency.isEmpty() ? "稳定性--" : "稳定性" + consistency)
+                                            .arg(stableFrames.isEmpty() ? "--" : stableFrames));
+    }
     m_mangoYoloValueLabel->setText(yoloConfidence.isEmpty() ? yoloLabel : QString("%1  置信度%2").arg(yoloLabel, yoloConfidence));
     m_mangoDataValueLabel->setText(dataStatus);
 
@@ -458,13 +680,222 @@ void MainWindow::refreshMangoQualityData()
     if (m_mangoReasonLabel) {
         m_mangoReasonLabel->setText(reason);
     }
+
+    refreshBatchStatsData();
+}
+
+void MainWindow::refreshBatchStatsData()
+{
+    if (!m_batchTotalValueLabel) {
+        return;
+    }
+
+    auto resetBatchUi = [&]() {
+        m_batchTotalValueLabel->setText("0");
+        m_batchSaleableValueLabel->setText("--");
+        m_batchRejectValueLabel->setText("0");
+        m_batchLatestValueLabel->setText("--");
+        if (m_batchStatusLabel) {
+            m_batchStatusLabel->setText("状态：等待批次统计");
+        }
+        if (m_batchSummaryLabel) {
+            m_batchSummaryLabel->setText("当前批次尚未完成芒果计数。");
+        }
+        if (m_batchMaturityChart) {
+            m_batchMaturityChart->setData({0, 0, 0}, {"未熟", "成熟", "过熟"}, {QColor("#34C759"), QColor("#FFCC00"), QColor("#FF9500")});
+        }
+        if (m_batchGradeChart) {
+            m_batchGradeChart->setData({0, 0, 0, 0}, {"A", "B", "C", "剔除"}, {QColor("#007AFF"), QColor("#34C759"), QColor("#FF9500"), QColor("#FF3B30")});
+        }
+        if (m_batchChannelChart) {
+            m_batchChannelChart->setData({0, 0, 0, 0, 0}, {"销售", "催熟", "加工", "复检", "剔除"}, {QColor("#34C759"), QColor("#FFCC00"), QColor("#FF9500"), QColor("#5E5CE6"), QColor("#FF3B30")});
+        }
+    };
+
+    QFile file(kMangoBatchCsvFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        resetBatchUi();
+        return;
+    }
+
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    QString headerLine;
+    QString lastLine;
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        if (headerLine.isEmpty()) {
+            headerLine = line;
+        } else {
+            lastLine = line;
+        }
+    }
+
+    if (headerLine.isEmpty() || lastLine.isEmpty()) {
+        resetBatchUi();
+        return;
+    }
+
+    const QStringList headers = parseCsvLine(headerLine);
+    const QStringList fields = parseCsvLine(lastLine);
+    auto valueFor = [&](const QString &key, const QString &fallback = QString("0")) {
+        const int index = headers.indexOf(key);
+        if (index < 0 || index >= fields.size()) {
+            return fallback;
+        }
+        const QString value = fields.at(index).trimmed();
+        return value.isEmpty() ? fallback : value;
+    };
+    auto intFor = [&](const QString &key) {
+        bool ok = false;
+        const int value = valueFor(key).toInt(&ok);
+        return ok ? value : 0;
+    };
+    auto doubleFor = [&](const QString &key) {
+        bool ok = false;
+        const double value = valueFor(key).toDouble(&ok);
+        return ok ? value : 0.0;
+    };
+
+    const int total = intFor("total_count");
+    const int reject = intFor("reject_count");
+    const double saleable = doubleFor("saleable_ratio");
+    const double rotRisk = doubleFor("rot_risk_ratio");
+    const QString latestId = valueFor("last_mango_id", "--");
+    const QString latestGrade = valueFor("last_quality_grade", "--");
+    const QString latestChannel = valueFor("last_suggested_channel", "--");
+    const QString latestMaturity = valueFor("last_maturity_label", "--");
+    const QString timestamp = valueFor("timestamp", "");
+
+    m_batchTotalValueLabel->setText(QString::number(total));
+    m_batchSaleableValueLabel->setText(total > 0 ? QString("%1%").arg(saleable, 0, 'f', 1) : "--");
+    m_batchRejectValueLabel->setText(QString::number(reject));
+    if (latestId == "--" || latestId.isEmpty()) {
+        m_batchLatestValueLabel->setText("--");
+    } else {
+        m_batchLatestValueLabel->setText(QString("#%1  %2").arg(latestId, latestGrade));
+    }
+
+    if (m_batchMaturityChart) {
+        m_batchMaturityChart->setData(
+            {static_cast<double>(intFor("unripe_count")), static_cast<double>(intFor("ripe_count")), static_cast<double>(intFor("overripe_count"))},
+            {"未熟", "成熟", "过熟"},
+            {QColor("#34C759"), QColor("#FFCC00"), QColor("#FF9500")}
+        );
+    }
+    if (m_batchGradeChart) {
+        m_batchGradeChart->setData(
+            {static_cast<double>(intFor("grade_a_count")), static_cast<double>(intFor("grade_b_count")), static_cast<double>(intFor("grade_c_count")), static_cast<double>(intFor("reject_count"))},
+            {"A", "B", "C", "剔除"},
+            {QColor("#007AFF"), QColor("#34C759"), QColor("#FF9500"), QColor("#FF3B30")}
+        );
+    }
+    if (m_batchChannelChart) {
+        m_batchChannelChart->setData(
+            {static_cast<double>(intFor("channel_sales_count")), static_cast<double>(intFor("channel_ripen_count")), static_cast<double>(intFor("channel_process_count")), static_cast<double>(intFor("channel_recheck_count")), static_cast<double>(intFor("channel_reject_count"))},
+            {"销售", "催熟", "加工", "复检", "剔除"},
+            {QColor("#34C759"), QColor("#FFCC00"), QColor("#FF9500"), QColor("#5E5CE6"), QColor("#FF3B30")}
+        );
+    }
+
+    if (m_batchStatusLabel) {
+        m_batchStatusLabel->setText(timestamp.isEmpty() ? "状态：批次统计已更新" : "状态：更新于 " + timestamp);
+    }
+    if (m_batchSummaryLabel) {
+        if (total > 0) {
+            m_batchSummaryLabel->setText(QString("本批次已统计%1个芒果，可销售%2%，异常风险%3%。最近结果：%4，%5。")
+                                         .arg(total)
+                                         .arg(saleable, 0, 'f', 1)
+                                         .arg(rotRisk, 0, 'f', 1)
+                                         .arg(latestMaturity)
+                                         .arg(latestChannel));
+        } else {
+            m_batchSummaryLabel->setText("当前批次尚未完成芒果计数。");
+        }
+    }
+}
+
+void MainWindow::refreshMangoHistoryData()
+{
+    if (!m_historyTable) {
+        return;
+    }
+
+    QFile file(kMangoHistoryCsvFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        m_historyTable->setRowCount(0);
+        if (m_historySummaryLabel) {
+            m_historySummaryLabel->setText("已检测 0 个芒果");
+        }
+        return;
+    }
+
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    QString headerLine;
+    QVector<QStringList> rows;
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        if (headerLine.isEmpty()) {
+            headerLine = line;
+        } else {
+            rows.append(parseCsvLine(line));
+        }
+    }
+
+    const QStringList headers = parseCsvLine(headerLine);
+    auto columnValue = [&](const QStringList &fields, const QString &key, const QString &fallback = QString("--")) {
+        const int index = headers.indexOf(key);
+        if (index < 0 || index >= fields.size()) {
+            return fallback;
+        }
+        const QString value = fields.at(index).trimmed();
+        return value.isEmpty() ? fallback : value;
+    };
+
+    m_historyTable->setRowCount(rows.size());
+    const QStringList keys = {
+        "mango_id",
+        "timestamp",
+        "quality_grade",
+        "maturity_label",
+        "reference_brix_range",
+        "rot_status",
+        "suggested_channel",
+        "final_status"
+    };
+
+    int displayRow = 0;
+    for (int i = rows.size() - 1; i >= 0; --i) {
+        const QStringList fields = rows.at(i);
+        for (int col = 0; col < keys.size(); ++col) {
+            QString text = columnValue(fields, keys.at(col));
+            if (keys.at(col) == "mango_id" && text != "--") {
+                text = "#" + text;
+            }
+            QTableWidgetItem *item = new QTableWidgetItem(text);
+            item->setTextAlignment(Qt::AlignCenter);
+            m_historyTable->setItem(displayRow, col, item);
+        }
+        ++displayRow;
+    }
+
+    if (m_historySummaryLabel) {
+        m_historySummaryLabel->setText(QString("已检测 %1 个芒果").arg(rows.size()));
+    }
 }
 
 void MainWindow::readSensorMessages()
 {
     m_sensorProcess->readAllStandardError();
     if (m_sensorStatusLabel) {
-        m_sensorStatusLabel->setText("仅环境数据");
+        m_sensorStatusLabel->clear();
     }
 }
 
@@ -534,13 +965,13 @@ QWidget *MainWindow::createStartPage()
     page->setObjectName("startPage");
     page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
-    QVBoxLayout *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(70, 54, 70, 54);
+    QHBoxLayout *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(72, 56, 72, 56);
     layout->setSpacing(34);
 
     QLabel *title = new QLabel("水果端侧AI视觉质检系统");
     title->setObjectName("startTitle");
-    title->setAlignment(Qt::AlignCenter);
+    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     title->setWordWrap(true);
 
     QPushButton *startButton = new QPushButton("开始检测");
@@ -549,12 +980,89 @@ QWidget *MainWindow::createStartPage()
     startButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(startButton, &QPushButton::clicked, this, &MainWindow::showWorkPage);
 
-    layout->addStretch(2);
-    layout->addWidget(title);
-    layout->addSpacing(34);
-    layout->addWidget(startButton);
-    layout->addStretch(3);
+    QVBoxLayout *leftLayout = new QVBoxLayout;
+    leftLayout->setSpacing(22);
+    QLabel *subtitle = new QLabel("实时检测、分拣控制、批次统计");
+    subtitle->setObjectName("startSubtitle");
+    subtitle->setWordWrap(true);
+    leftLayout->addStretch(1);
+    leftLayout->addWidget(title);
+    leftLayout->addWidget(subtitle);
+    leftLayout->addWidget(startButton);
+    leftLayout->addStretch(1);
 
+    QFrame *summaryPanel = new QFrame;
+    summaryPanel->setObjectName("startSummaryPanel");
+    QVBoxLayout *summaryLayout = new QVBoxLayout(summaryPanel);
+    summaryLayout->setContentsMargins(24, 22, 24, 22);
+    summaryLayout->setSpacing(14);
+
+    QLabel *summaryTitle = new QLabel("工作台");
+    summaryTitle->setObjectName("controlTitle");
+    QLabel *summaryLine1 = new QLabel("实时画面");
+    summaryLine1->setObjectName("startSummaryItem_orange");
+    QLabel *summaryLine2 = new QLabel("环境监测");
+    summaryLine2->setObjectName("startSummaryItem_blue");
+    QLabel *summaryLine3 = new QLabel("芒果品质");
+    summaryLine3->setObjectName("startSummaryItem_green");
+    QLabel *summaryLine4 = new QLabel("批次历史");
+    summaryLine4->setObjectName("startSummaryItem_purple");
+    for (QLabel *label : {summaryLine1, summaryLine2, summaryLine3, summaryLine4}) {
+        label->setMinimumHeight(54);
+    }
+    summaryLayout->addWidget(summaryTitle);
+    summaryLayout->addWidget(summaryLine1);
+    summaryLayout->addWidget(summaryLine2);
+    summaryLayout->addWidget(summaryLine3);
+    summaryLayout->addWidget(summaryLine4);
+    summaryLayout->addStretch(1);
+
+    layout->addLayout(leftLayout, 5);
+    layout->addWidget(summaryPanel, 3);
+
+    return page;
+}
+
+QWidget *MainWindow::createMangoHistoryPage()
+{
+    QWidget *page = new QWidget;
+    page->setObjectName("historyPage");
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(28, 24, 28, 24);
+    layout->setSpacing(14);
+
+    QHBoxLayout *header = new QHBoxLayout;
+    QLabel *title = new QLabel("已检测芒果记录");
+    title->setObjectName("historyTitle");
+    QPushButton *backButton = new QPushButton("返回检测");
+    backButton->setObjectName("secondaryButton");
+    backButton->setFixedHeight(48);
+    backButton->setMinimumWidth(142);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showWorkPage);
+    header->addWidget(title);
+    header->addWidget(backButton, 0, Qt::AlignRight);
+
+    m_historySummaryLabel = new QLabel("已检测 0 个芒果");
+    m_historySummaryLabel->setObjectName("historySummary");
+
+    m_historyTable = new QTableWidget;
+    m_historyTable->setObjectName("historyTable");
+    m_historyTable->setColumnCount(8);
+    m_historyTable->setHorizontalHeaderLabels({"编号", "时间", "等级", "成熟度", "参考糖度", "腐烂", "流向", "结论"});
+    m_historyTable->verticalHeader()->setVisible(false);
+    m_historyTable->horizontalHeader()->setStretchLastSection(true);
+    m_historyTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_historyTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_historyTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_historyTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_historyTable->setAlternatingRowColors(true);
+    m_historyTable->setShowGrid(false);
+
+    layout->addLayout(header);
+    layout->addWidget(m_historySummaryLabel);
+    layout->addWidget(m_historyTable, 1);
+
+    refreshMangoHistoryData();
     return page;
 }
 
@@ -626,9 +1134,10 @@ QFrame *MainWindow::createSensorPanel()
     QHBoxLayout *header = new QHBoxLayout;
     QLabel *title = new QLabel("环境实时数据");
     title->setObjectName("panelTitle");
-    m_sensorStatusLabel = new QLabel("仅环境数据");
+    m_sensorStatusLabel = new QLabel("");
     m_sensorStatusLabel->setObjectName("sensorStatus");
     m_sensorStatusLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_sensorStatusLabel->hide();
     header->addWidget(title);
     header->addWidget(m_sensorStatusLabel, 1);
 
@@ -639,7 +1148,7 @@ QFrame *MainWindow::createSensorPanel()
 
     for (int i = 0; i < kSensorCardCount; ++i) {
         QFrame *card = new QFrame;
-        card->setObjectName("sensorCard");
+        card->setObjectName(QString("sensorCard_%1").arg(i));
         card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
         QVBoxLayout *cardLayout = new QVBoxLayout(card);
@@ -672,7 +1181,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
     layout->setContentsMargins(12, 8, 12, 8);
     layout->setSpacing(8);
 
-    QLabel *title = new QLabel("功能控制");
+    QLabel *title = new QLabel("功能区");
     title->setObjectName("panelTitle");
 
     QPushButton *exitButton = new QPushButton("退出检测");
@@ -688,6 +1197,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
     m_functionPages->addWidget(createConveyorControlPage());
     m_functionPages->addWidget(createLedControlPage());
     m_functionPages->addWidget(createMangoQualityPage());
+    m_functionPages->addWidget(createBatchStatsPage());
     m_functionPages->addWidget(createServoControlPage());
 
     layout->addWidget(title);
@@ -704,41 +1214,47 @@ QWidget *MainWindow::createFunctionHomePage()
     page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(12);
+    layout->setSpacing(10);
 
-    QPushButton *conveyorButton = new QPushButton("传送带调速控制");
-    conveyorButton->setObjectName("featureButton");
-    conveyorButton->setFixedHeight(62);
+    QPushButton *conveyorButton = new QPushButton("传送带");
+    conveyorButton->setObjectName("featureButton_orange");
+    conveyorButton->setFixedHeight(58);
     conveyorButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(conveyorButton, &QPushButton::clicked, this, &MainWindow::showConveyorControlPage);
 
-    QPushButton *ledButton = new QPushButton("LED亮度控制");
-    ledButton->setObjectName("featureButton");
-    ledButton->setFixedHeight(62);
+    QPushButton *ledButton = new QPushButton("LED亮度");
+    ledButton->setObjectName("featureButton_blue");
+    ledButton->setFixedHeight(58);
     ledButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(ledButton, &QPushButton::clicked, this, &MainWindow::showLedControlPage);
 
-    QPushButton *mangoButton = new QPushButton("查看芒果状况");
-    mangoButton->setObjectName("featureButton");
-    mangoButton->setFixedHeight(62);
-    mangoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(mangoButton, &QPushButton::clicked, this, &MainWindow::showMangoQualityPage);
-
-    QPushButton *servoButton = new QPushButton("舵机旋转控制");
-    servoButton->setObjectName("featureButton");
-    servoButton->setFixedHeight(62);
+    QPushButton *servoButton = new QPushButton("舵机分拣");
+    servoButton->setObjectName("featureButton_purple");
+    servoButton->setFixedHeight(58);
     servoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(servoButton, &QPushButton::clicked, this, &MainWindow::showServoControlPage);
 
-    QLabel *placeholder = new QLabel("功能区");
-    placeholder->setObjectName("functionPlaceholder");
-    placeholder->setAlignment(Qt::AlignCenter);
+    QPushButton *mangoButton = new QPushButton("当前芒果");
+    mangoButton->setObjectName("featureButton_green");
+    mangoButton->setFixedHeight(58);
+    mangoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(mangoButton, &QPushButton::clicked, this, &MainWindow::showMangoQualityPage);
 
-    layout->addWidget(conveyorButton);
-    layout->addWidget(ledButton);
-    layout->addWidget(mangoButton);
-    layout->addWidget(servoButton);
-    layout->addWidget(placeholder, 1);
+    QPushButton *batchButton = new QPushButton("批次统计");
+    batchButton->setObjectName("featureButton_indigo");
+    batchButton->setFixedHeight(58);
+    batchButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(batchButton, &QPushButton::clicked, this, &MainWindow::showBatchStatsPage);
+
+    QPushButton *historyButton = new QPushButton("历史记录");
+    historyButton->setObjectName("featureButtonProminent");
+    historyButton->setFixedHeight(64);
+    historyButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(historyButton, &QPushButton::clicked, this, &MainWindow::showMangoHistoryPage);
+
+    layout->addWidget(makeFunctionSection("实时使用", {conveyorButton, ledButton, servoButton}));
+    layout->addWidget(makeFunctionSection("数据查看", {mangoButton, batchButton, historyButton}));
+    layout->addStretch(1);
     return page;
 }
 
@@ -767,7 +1283,7 @@ QWidget *MainWindow::createConveyorControlPage()
     speedLayout->setSpacing(8);
 
     QHBoxLayout *speedHeader = new QHBoxLayout;
-    QLabel *speedName = new QLabel("速度");
+    QLabel *speedName = new QLabel("档位");
     speedName->setObjectName("controlLabel");
     m_conveyorSpeedValueLabel = new QLabel;
     m_conveyorSpeedValueLabel->setObjectName("speedValue");
@@ -775,41 +1291,59 @@ QWidget *MainWindow::createConveyorControlPage()
     speedHeader->addWidget(speedName);
     speedHeader->addWidget(m_conveyorSpeedValueLabel, 1);
 
-    m_conveyorSpeedSlider = new QSlider(Qt::Horizontal);
-    m_conveyorSpeedSlider->setObjectName("speedSlider");
-    m_conveyorSpeedSlider->setRange(m_conveyorMinSpeedX10, m_conveyorMaxSpeedX10);
-    m_conveyorSpeedSlider->setSingleStep(1);
-    m_conveyorSpeedSlider->setPageStep(1);
-    m_conveyorSpeedSlider->setTickPosition(QSlider::TicksBelow);
-    m_conveyorSpeedSlider->setTickInterval(1);
-    m_conveyorSpeedSlider->setValue(m_conveyorDefaultSpeedX10);
-    connect(m_conveyorSpeedSlider, &QSlider::valueChanged, this, &MainWindow::updateConveyorSpeedLabel);
-    connect(m_conveyorSpeedSlider, &QSlider::sliderReleased, this, &MainWindow::applyConveyorSpeed);
+    QHBoxLayout *gearLayout = new QHBoxLayout;
+    gearLayout->setSpacing(1);
+
+    m_conveyorSlowButton = new QPushButton("一档\n慢");
+    m_conveyorSlowButton->setObjectName("gearLeft");
+    m_conveyorSlowButton->setCheckable(true);
+    m_conveyorSlowButton->setMinimumHeight(72);
+    connect(m_conveyorSlowButton, &QPushButton::clicked, this, [this]() { selectConveyorSpeedGear(0); });
+
+    m_conveyorMediumButton = new QPushButton("二档\n中");
+    m_conveyorMediumButton->setObjectName("gearMiddle");
+    m_conveyorMediumButton->setCheckable(true);
+    m_conveyorMediumButton->setMinimumHeight(72);
+    connect(m_conveyorMediumButton, &QPushButton::clicked, this, [this]() { selectConveyorSpeedGear(1); });
+
+    m_conveyorFastButton = new QPushButton("三档\n快");
+    m_conveyorFastButton->setObjectName("gearRight");
+    m_conveyorFastButton->setCheckable(true);
+    m_conveyorFastButton->setMinimumHeight(72);
+    connect(m_conveyorFastButton, &QPushButton::clicked, this, [this]() { selectConveyorSpeedGear(2); });
+
+    gearLayout->addWidget(m_conveyorSlowButton);
+    gearLayout->addWidget(m_conveyorMediumButton);
+    gearLayout->addWidget(m_conveyorFastButton);
 
     speedLayout->addLayout(speedHeader);
-    speedLayout->addWidget(m_conveyorSpeedSlider);
+    speedLayout->addLayout(gearLayout);
 
     QHBoxLayout *runLayout = new QHBoxLayout;
-    runLayout->setSpacing(8);
+    runLayout->setSpacing(1);
 
-    QPushButton *forwardButton = new QPushButton("正转");
-    forwardButton->setObjectName("runButton");
-    forwardButton->setMinimumHeight(74);
-    connect(forwardButton, &QPushButton::clicked, this, &MainWindow::startConveyorForward);
+    m_conveyorReverseButton = new QPushButton("< 反转");
+    m_conveyorReverseButton->setObjectName("segmentLeft");
+    m_conveyorReverseButton->setCheckable(true);
+    m_conveyorReverseButton->setMinimumHeight(72);
+    connect(m_conveyorReverseButton, &QPushButton::clicked, this, &MainWindow::startConveyorReverse);
 
-    QPushButton *reverseButton = new QPushButton("反转");
-    reverseButton->setObjectName("runButton");
-    reverseButton->setMinimumHeight(74);
-    connect(reverseButton, &QPushButton::clicked, this, &MainWindow::startConveyorReverse);
+    m_conveyorStopButton = new QPushButton("停止");
+    m_conveyorStopButton->setObjectName("segmentMiddle");
+    m_conveyorStopButton->setCheckable(true);
+    m_conveyorStopButton->setChecked(true);
+    m_conveyorStopButton->setMinimumHeight(72);
+    connect(m_conveyorStopButton, &QPushButton::clicked, this, &MainWindow::stopConveyor);
 
-    QPushButton *stopButton = new QPushButton("停止");
-    stopButton->setObjectName("stopButton");
-    stopButton->setMinimumHeight(74);
-    connect(stopButton, &QPushButton::clicked, this, &MainWindow::stopConveyor);
+    m_conveyorForwardButton = new QPushButton("正转 >");
+    m_conveyorForwardButton->setObjectName("segmentRight");
+    m_conveyorForwardButton->setCheckable(true);
+    m_conveyorForwardButton->setMinimumHeight(72);
+    connect(m_conveyorForwardButton, &QPushButton::clicked, this, &MainWindow::startConveyorForward);
 
-    runLayout->addWidget(forwardButton);
-    runLayout->addWidget(reverseButton);
-    runLayout->addWidget(stopButton);
+    runLayout->addWidget(m_conveyorReverseButton);
+    runLayout->addWidget(m_conveyorStopButton);
+    runLayout->addWidget(m_conveyorForwardButton);
 
     m_motorStatusLabel = new QLabel("状态：已停止");
     m_motorStatusLabel->setObjectName("motorStatus");
@@ -824,7 +1358,7 @@ QWidget *MainWindow::createConveyorControlPage()
     layout->addWidget(m_motorStatusLabel);
     layout->addStretch(1);
 
-    updateConveyorSpeedLabel(m_conveyorSpeedSlider->value());
+    updateConveyorGearButtons();
     return page;
 }
 
@@ -906,17 +1440,18 @@ QWidget *MainWindow::createLedControlPage()
     buttonLayout->setSpacing(8);
 
     QPushButton *applyButton = new QPushButton("应用");
-    applyButton->setObjectName("runButton");
+    applyButton->setObjectName("primaryControlButton");
     applyButton->setMinimumHeight(64);
     connect(applyButton, &QPushButton::clicked, this, &MainWindow::applyLedBrightness);
 
     QPushButton *offButton = new QPushButton("关闭");
-    offButton->setObjectName("stopButton");
+    offButton->setObjectName("destructiveControlButton");
     offButton->setMinimumHeight(64);
     connect(offButton, &QPushButton::clicked, this, &MainWindow::turnLedOff);
 
-    m_ledAutoButton = new QPushButton("自动调节：关");
-    m_ledAutoButton->setObjectName("runButton");
+    m_ledAutoButton = new QPushButton("自动调节  关");
+    m_ledAutoButton->setObjectName("switchButton");
+    m_ledAutoButton->setCheckable(true);
     m_ledAutoButton->setMinimumHeight(64);
     connect(m_ledAutoButton, &QPushButton::clicked, this, &MainWindow::toggleLedAutoMode);
 
@@ -949,7 +1484,7 @@ QWidget *MainWindow::createMangoQualityPage()
     page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(10);
+    layout->setSpacing(6);
 
     QPushButton *backButton = new QPushButton("返回功能区");
     backButton->setObjectName("secondaryButton");
@@ -962,9 +1497,10 @@ QWidget *MainWindow::createMangoQualityPage()
     auto makeRow = [](const QString &name, QLabel **valueLabel) {
         QFrame *row = new QFrame;
         row->setObjectName("qualityRow");
-        row->setMinimumHeight(52);
+        row->setMinimumHeight(38);
+        row->setMaximumHeight(46);
         QHBoxLayout *rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(12, 6, 12, 6);
+        rowLayout->setContentsMargins(10, 4, 10, 4);
         rowLayout->setSpacing(8);
 
         QLabel *nameLabel = new QLabel(name);
@@ -984,23 +1520,29 @@ QWidget *MainWindow::createMangoQualityPage()
 
     layout->addWidget(backButton);
     layout->addWidget(title);
+    layout->addWidget(makeRow("芒果编号", &m_mangoIdValueLabel));
+    layout->addWidget(makeRow("品质等级", &m_mangoGradeValueLabel));
+    layout->addWidget(makeRow("建议流向", &m_mangoChannelValueLabel));
     layout->addWidget(makeRow("成熟度", &m_mangoMaturityValueLabel));
     layout->addWidget(makeRow("参考糖度", &m_mangoSugarValueLabel));
     layout->addWidget(makeRow("腐烂状况", &m_mangoRotValueLabel));
     layout->addWidget(makeRow("综合结论", &m_mangoFinalValueLabel));
+    layout->addWidget(makeRow("稳定性", &m_mangoStabilityValueLabel));
     layout->addWidget(makeRow("YOLO结果", &m_mangoYoloValueLabel));
     layout->addWidget(makeRow("数据状态", &m_mangoDataValueLabel));
 
     m_mangoQualityStatusLabel = new QLabel("状态：等待三模态融合结果");
     m_mangoQualityStatusLabel->setObjectName("motorStatus");
     m_mangoQualityStatusLabel->setWordWrap(true);
+    m_mangoQualityStatusLabel->hide();
 
-    m_mangoReasonLabel = new QLabel("暂无说明");
+    m_mangoReasonLabel = new QLabel("");
     m_mangoReasonLabel->setObjectName("qualityReason");
     m_mangoReasonLabel->setWordWrap(true);
-    m_mangoReasonLabel->setMinimumHeight(64);
-    m_mangoReasonLabel->setMaximumHeight(104);
+    m_mangoReasonLabel->setMinimumHeight(0);
+    m_mangoReasonLabel->setMaximumHeight(0);
     m_mangoReasonLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_mangoReasonLabel->hide();
 
     layout->addWidget(m_mangoQualityStatusLabel);
     layout->addWidget(m_mangoReasonLabel);
@@ -1023,29 +1565,39 @@ QWidget *MainWindow::createServoControlPage()
     backButton->setMinimumHeight(46);
     connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
 
-    QLabel *title = new QLabel("舵机旋转控制");
+    QLabel *title = new QLabel("自动分拣");
     title->setObjectName("controlTitle");
 
-    QLabel *description = new QLabel("1号：-45度    2号：0度    3号：45度");
+    QLabel *description = new QLabel("自动根据芒果等级与建议流向触发舵机，手动按钮仅用于调试。");
     description->setObjectName("motorStatus");
     description->setWordWrap(true);
 
-    QPushButton *position1Button = new QPushButton("1号  -45度");
-    position1Button->setObjectName("runButton");
-    position1Button->setMinimumHeight(58);
-    connect(position1Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition1);
+    QHBoxLayout *positionLayout = new QHBoxLayout;
+    positionLayout->setSpacing(1);
 
-    QPushButton *position2Button = new QPushButton("2号  0度");
-    position2Button->setObjectName("runButton");
-    position2Button->setMinimumHeight(58);
-    connect(position2Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition2);
+    m_servoPosition1Button = new QPushButton("1号\n-45度");
+    m_servoPosition1Button->setObjectName("segmentLeft");
+    m_servoPosition1Button->setCheckable(true);
+    m_servoPosition1Button->setMinimumHeight(74);
+    connect(m_servoPosition1Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition1);
 
-    QPushButton *position3Button = new QPushButton("3号  45度");
-    position3Button->setObjectName("runButton");
-    position3Button->setMinimumHeight(58);
-    connect(position3Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition3);
+    m_servoPosition2Button = new QPushButton("2号\n0度");
+    m_servoPosition2Button->setObjectName("segmentMiddle");
+    m_servoPosition2Button->setCheckable(true);
+    m_servoPosition2Button->setMinimumHeight(74);
+    connect(m_servoPosition2Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition2);
 
-    m_servoStatusLabel = new QLabel("状态：等待舵机指令");
+    m_servoPosition3Button = new QPushButton("3号\n45度");
+    m_servoPosition3Button->setObjectName("segmentRight");
+    m_servoPosition3Button->setCheckable(true);
+    m_servoPosition3Button->setMinimumHeight(74);
+    connect(m_servoPosition3Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition3);
+
+    positionLayout->addWidget(m_servoPosition1Button);
+    positionLayout->addWidget(m_servoPosition2Button);
+    positionLayout->addWidget(m_servoPosition3Button);
+
+    m_servoStatusLabel = new QLabel("状态：自动分拣已接入融合程序");
     m_servoStatusLabel->setObjectName("motorStatus");
     m_servoStatusLabel->setWordWrap(true);
     m_servoStatusLabel->setMinimumHeight(56);
@@ -1053,12 +1605,94 @@ QWidget *MainWindow::createServoControlPage()
     layout->addWidget(backButton);
     layout->addWidget(title);
     layout->addWidget(description);
-    layout->addWidget(position1Button);
-    layout->addWidget(position2Button);
-    layout->addWidget(position3Button);
+    layout->addLayout(positionLayout);
     layout->addWidget(m_servoStatusLabel);
     layout->addStretch(1);
 
+    return page;
+}
+
+QWidget *MainWindow::createBatchStatsPage()
+{
+    QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+
+    QPushButton *backButton = new QPushButton("返回功能区");
+    backButton->setObjectName("secondaryButton");
+    backButton->setMinimumHeight(42);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
+
+    QScrollArea *scrollArea = new QScrollArea;
+    scrollArea->setObjectName("panelScrollArea");
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    QWidget *content = new QWidget;
+    content->setObjectName("panelScrollContent");
+    QVBoxLayout *contentLayout = new QVBoxLayout(content);
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(6);
+
+    QLabel *title = new QLabel("批次统计");
+    title->setObjectName("controlTitle");
+
+    QGridLayout *metricGrid = new QGridLayout;
+    metricGrid->setContentsMargins(0, 0, 0, 0);
+    metricGrid->setHorizontalSpacing(6);
+    metricGrid->setVerticalSpacing(6);
+    metricGrid->addWidget(makeMetricCard("本批数量", &m_batchTotalValueLabel, "blue"), 0, 0);
+    metricGrid->addWidget(makeMetricCard("可销售", &m_batchSaleableValueLabel, "green"), 0, 1);
+    metricGrid->addWidget(makeMetricCard("剔除数", &m_batchRejectValueLabel, "red"), 1, 0);
+    metricGrid->addWidget(makeMetricCard("最新结果", &m_batchLatestValueLabel, "purple"), 1, 1);
+
+    QLabel *maturityTitle = new QLabel("成熟分布");
+    maturityTitle->setObjectName("chartTitle");
+    m_batchMaturityChart = new DonutChartWidget;
+    m_batchMaturityChart->setMaximumHeight(162);
+
+    QLabel *gradeTitle = new QLabel("品质等级");
+    gradeTitle->setObjectName("chartTitle");
+    m_batchGradeChart = new BarChartWidget;
+    m_batchGradeChart->setMaximumHeight(124);
+
+    QLabel *channelTitle = new QLabel("分拣流向");
+    channelTitle->setObjectName("chartTitle");
+    m_batchChannelChart = new BarChartWidget;
+    m_batchChannelChart->setMaximumHeight(124);
+
+    m_batchStatusLabel = new QLabel("状态：等待批次统计");
+    m_batchStatusLabel->setObjectName("motorStatus");
+    m_batchStatusLabel->setWordWrap(true);
+
+    m_batchSummaryLabel = new QLabel("当前批次尚未完成芒果计数。");
+    m_batchSummaryLabel->setObjectName("qualityReason");
+    m_batchSummaryLabel->setWordWrap(true);
+    m_batchSummaryLabel->setMinimumHeight(42);
+    m_batchSummaryLabel->setMaximumHeight(64);
+
+    contentLayout->addWidget(title);
+    contentLayout->addLayout(metricGrid);
+    contentLayout->addWidget(maturityTitle);
+    contentLayout->addWidget(m_batchMaturityChart);
+    contentLayout->addWidget(gradeTitle);
+    contentLayout->addWidget(m_batchGradeChart);
+    contentLayout->addWidget(channelTitle);
+    contentLayout->addWidget(m_batchChannelChart);
+    contentLayout->addWidget(m_batchStatusLabel);
+    contentLayout->addWidget(m_batchSummaryLabel);
+    contentLayout->addStretch(1);
+
+    scrollArea->setWidget(content);
+
+    layout->addWidget(backButton);
+    layout->addWidget(scrollArea, 1);
+
+    refreshBatchStatsData();
     return page;
 }
 
@@ -1078,22 +1712,89 @@ QLabel *MainWindow::makeSensorValueLabel()
     return label;
 }
 
+QFrame *MainWindow::makeMetricCard(const QString &name, QLabel **valueLabel, const QString &accentName)
+{
+    QFrame *card = new QFrame;
+    card->setObjectName(accentName.isEmpty() ? "metricCard" : QString("metricCard_") + accentName);
+    card->setMinimumHeight(70);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    QVBoxLayout *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(10, 6, 10, 8);
+    layout->setSpacing(2);
+
+    QLabel *nameLabel = new QLabel(name);
+    nameLabel->setObjectName("metricName");
+
+    QLabel *value = new QLabel("--");
+    value->setObjectName("metricValue");
+    value->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    value->setWordWrap(true);
+
+    layout->addWidget(nameLabel);
+    layout->addWidget(value, 1);
+    *valueLabel = value;
+    return card;
+}
+
+QFrame *MainWindow::makeFunctionSection(const QString &title, const QList<QPushButton *> &buttons)
+{
+    QFrame *section = new QFrame;
+    section->setObjectName("functionSection");
+    section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    QVBoxLayout *layout = new QVBoxLayout(section);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(8);
+
+    QLabel *titleLabel = new QLabel(title);
+    titleLabel->setObjectName("functionSectionTitle");
+    layout->addWidget(titleLabel);
+
+    for (QPushButton *button : buttons) {
+        layout->addWidget(button);
+    }
+
+    return section;
+}
+
 void MainWindow::applyGlobalStyle()
 {
     qApp->setStyleSheet(
-        "QMainWindow, QWidget#startPage, QWidget#workPage {"
-        "  background: #eaf8df;"
-        "  color: #173d24;"
+        "QMainWindow, QWidget#startPage, QWidget#workPage, QWidget#historyPage {"
+        "  background: #EEF3F8;"
+        "  color: #1D1D1F;"
         "}"
         "QLabel {"
-        "  color: #173d24;"
+        "  color: #1D1D1F;"
         "}"
         "QLabel#startTitle {"
-        "  font-size: 44px;"
+        "  color: #111827;"
+        "  font-size: 46px;"
         "  font-weight: 700;"
         "}"
+        "QLabel#startSubtitle {"
+        "  color: #4B5563;"
+        "  font-size: 24px;"
+        "  font-weight: 600;"
+        "}"
+        "QFrame#startSummaryPanel {"
+        "  background: #FCFCFF;"
+        "  border: 1px solid #DDE6F2;"
+        "  border-radius: 8px;"
+        "}"
+        "QLabel#startSummaryItem_orange, QLabel#startSummaryItem_blue, QLabel#startSummaryItem_green, QLabel#startSummaryItem_purple {"
+        "  border-radius: 7px;"
+        "  font-size: 21px;"
+        "  font-weight: 700;"
+        "  padding-left: 16px;"
+        "}"
+        "QLabel#startSummaryItem_orange { background: #FFF3E6; color: #9A4F00; border: 1px solid #FFD29A; }"
+        "QLabel#startSummaryItem_blue { background: #EAF4FF; color: #005BBB; border: 1px solid #B9DCFF; }"
+        "QLabel#startSummaryItem_green { background: #EDFFF3; color: #137A35; border: 1px solid #BFE8C8; }"
+        "QLabel#startSummaryItem_purple { background: #F4F0FF; color: #4E3BBF; border: 1px solid #D8CCFF; }"
         "QPushButton#startButton {"
-        "  background: #5fb66a;"
+        "  background: #0A84FF;"
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
@@ -1102,36 +1803,60 @@ void MainWindow::applyGlobalStyle()
         "  padding: 18px;"
         "}"
         "QPushButton#startButton:pressed {"
-        "  background: #4a9b55;"
+        "  background: #005BBB;"
         "}"
         "QPushButton#exitButton {"
         "  background: #ffffff;"
-        "  color: #1f5a31;"
-        "  border: 2px solid #72bd78;"
+        "  color: #FF3B30;"
+        "  border: 1px solid #FFD1CD;"
         "  border-radius: 8px;"
-        "  font-size: 22px;"
+        "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 8px;"
         "}"
         "QPushButton#exitButton:pressed {"
-        "  background: #d7f0cc;"
+        "  background: #FFF1F0;"
         "}"
-        "QPushButton#featureButton {"
-        "  background: #5fb66a;"
-        "  color: white;"
-        "  border: none;"
+        "QPushButton#featureButton, QPushButton#featureButton_orange, QPushButton#featureButton_blue, QPushButton#featureButton_purple, QPushButton#featureButton_green, QPushButton#featureButton_indigo {"
+        "  color: #111827;"
         "  border-radius: 8px;"
-        "  font-size: 22px;"
+        "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 8px;"
         "}"
-        "QPushButton#featureButton:pressed {"
-        "  background: #4a9b55;"
+        "QPushButton#featureButton { background: #ffffff; border: 1px solid #E5E7EB; }"
+        "QPushButton#featureButton_orange { background: #FFF3E6; color: #8A4300; border: 1px solid #FFD29A; }"
+        "QPushButton#featureButton_blue { background: #EAF4FF; color: #005BBB; border: 1px solid #B9DCFF; }"
+        "QPushButton#featureButton_purple { background: #F4F0FF; color: #4E3BBF; border: 1px solid #D8CCFF; }"
+        "QPushButton#featureButton_green { background: #EDFFF3; color: #137A35; border: 1px solid #BFE8C8; }"
+        "QPushButton#featureButton_indigo { background: #EEF2FF; color: #3443A8; border: 1px solid #C7D2FE; }"
+        "QPushButton#featureButton:pressed, QPushButton#featureButton_orange:pressed, QPushButton#featureButton_blue:pressed, QPushButton#featureButton_purple:pressed, QPushButton#featureButton_green:pressed, QPushButton#featureButton_indigo:pressed { background: #ffffff; }"
+        "QPushButton#featureButtonProminent {"
+        "  background: #FF2D55;"
+        "  color: white;"
+        "  border: none;"
+        "  border-radius: 8px;"
+        "  font-size: 21px;"
+        "  font-weight: 700;"
+        "  padding: 8px;"
+        "}"
+        "QPushButton#featureButtonProminent:pressed {"
+        "  background: #C9183C;"
+        "}"
+        "QFrame#functionSection {"
+        "  background: #FCFCFF;"
+        "  border: 1px solid #DDE6F2;"
+        "  border-radius: 8px;"
+        "}"
+        "QLabel#functionSectionTitle {"
+        "  color: #6B7280;"
+        "  font-size: 16px;"
+        "  font-weight: 700;"
         "}"
         "QPushButton#secondaryButton {"
-        "  background: #edf8e8;"
-        "  color: #1f5a31;"
-        "  border: 1px solid #9ed49b;"
+        "  background: #EAF4FF;"
+        "  color: #0066CC;"
+        "  border: 1px solid #B9DCFF;"
         "  border-radius: 7px;"
         "  font-size: 18px;"
         "  font-weight: 700;"
@@ -1139,127 +1864,282 @@ void MainWindow::applyGlobalStyle()
         "}"
         "QPushButton#runButton {"
         "  background: #ffffff;"
-        "  color: #1f5a31;"
-        "  border: 2px solid #68b870;"
+        "  color: #007AFF;"
+        "  border: 1px solid #B9DCFF;"
         "  border-radius: 8px;"
-        "  font-size: 22px;"
+        "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 10px;"
         "}"
         "QPushButton#runButton:pressed {"
-        "  background: #d7f0cc;"
+        "  background: #EAF4FF;"
         "}"
         "QPushButton#stopButton {"
-        "  background: #d9534f;"
+        "  background: #FF3B30;"
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
-        "  font-size: 22px;"
+        "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 10px;"
         "}"
         "QPushButton#stopButton:pressed {"
-        "  background: #b8403c;"
+        "  background: #D70015;"
+        "}"
+        "QPushButton#primaryControlButton {"
+        "  background: #007AFF;"
+        "  color: white;"
+        "  border: none;"
+        "  border-radius: 8px;"
+        "  font-size: 20px;"
+        "  font-weight: 700;"
+        "  padding: 10px;"
+        "}"
+        "QPushButton#primaryControlButton:pressed {"
+        "  background: #005BBB;"
+        "}"
+        "QPushButton#destructiveControlButton {"
+        "  background: #FFF1F0;"
+        "  color: #D70015;"
+        "  border: 1px solid #FFD1CD;"
+        "  border-radius: 8px;"
+        "  font-size: 20px;"
+        "  font-weight: 700;"
+        "  padding: 10px;"
+        "}"
+        "QPushButton#destructiveControlButton:pressed {"
+        "  background: #FFDAD6;"
+        "}"
+        "QPushButton#switchButton {"
+        "  background: #E5E7EB;"
+        "  color: #4B5563;"
+        "  border: 1px solid #D1D5DB;"
+        "  border-radius: 8px;"
+        "  font-size: 19px;"
+        "  font-weight: 700;"
+        "  padding: 10px;"
+        "}"
+        "QPushButton#switchButton:checked {"
+        "  background: #34C759;"
+        "  color: white;"
+        "  border: 1px solid #34C759;"
+        "}"
+        "QPushButton#segmentLeft, QPushButton#segmentMiddle, QPushButton#segmentRight, QPushButton#gearLeft, QPushButton#gearMiddle, QPushButton#gearRight {"
+        "  background: #F2F2F7;"
+        "  color: #1D1D1F;"
+        "  border: 1px solid #D1D5DB;"
+        "  border-radius: 0px;"
+        "  font-size: 18px;"
+        "  font-weight: 700;"
+        "  padding: 8px;"
+        "}"
+        "QPushButton#segmentLeft, QPushButton#gearLeft {"
+        "  border-top-left-radius: 8px;"
+        "  border-bottom-left-radius: 8px;"
+        "}"
+        "QPushButton#segmentMiddle, QPushButton#gearMiddle {"
+        "  border-radius: 0px;"
+        "}"
+        "QPushButton#segmentRight, QPushButton#gearRight {"
+        "  border-top-right-radius: 8px;"
+        "  border-bottom-right-radius: 8px;"
+        "}"
+        "QPushButton#segmentLeft:checked, QPushButton#segmentMiddle:checked, QPushButton#segmentRight:checked, QPushButton#gearLeft:checked, QPushButton#gearMiddle:checked, QPushButton#gearRight:checked {"
+        "  background: #007AFF;"
+        "  color: white;"
+        "  border-color: #007AFF;"
+        "}"
+        "QPushButton#segmentLeft:pressed, QPushButton#segmentMiddle:pressed, QPushButton#segmentRight:pressed, QPushButton#gearLeft:pressed, QPushButton#gearMiddle:pressed, QPushButton#gearRight:pressed {"
+        "  background: #DDEEFF;"
         "}"
         "QFrame#videoPanel, QFrame#sensorPanel, QFrame#functionPanel {"
-        "  background: #f7fff2;"
-        "  border: 2px solid #9ed49b;"
+        "  background: #FCFCFF;"
+        "  border: 1px solid #DDE6F2;"
         "  border-radius: 8px;"
         "}"
         "QLabel#panelTitle {"
-        "  font-size: 22px;"
+        "  font-size: 21px;"
         "  font-weight: 700;"
-        "  color: #1f5a31;"
+        "  color: #111827;"
         "}"
         "QFrame#videoSurface {"
-        "  background: #142418;"
-        "  border: 3px solid #72bd78;"
+        "  background: #0B0F14;"
+        "  border: 1px solid #111827;"
         "  border-radius: 6px;"
         "}"
         "QWidget#videoState {"
-        "  color: #d7f5cf;"
+        "  color: #F2F2F7;"
         "  font-size: 28px;"
         "  font-weight: 700;"
         "}"
         "QLabel#sensorStatus {"
-        "  color: #4b7654;"
+        "  color: #6B7280;"
         "  font-size: 16px;"
         "}"
-        "QFrame#sensorCard {"
-        "  background: #e2f4d5;"
-        "  border: 1px solid #95cb90;"
+        "QFrame#sensorCard, QFrame#sensorCard_0, QFrame#sensorCard_1, QFrame#sensorCard_2, QFrame#sensorCard_3, QFrame#sensorCard_4, QFrame#sensorCard_5 {"
         "  border-radius: 7px;"
         "}"
+        "QFrame#sensorCard { background: #F9FAFB; border: 1px solid #E5E7EB; }"
+        "QFrame#sensorCard_0 { background: #FFF3E6; border: 1px solid #FFD29A; }"
+        "QFrame#sensorCard_1 { background: #EAF4FF; border: 1px solid #B9DCFF; }"
+        "QFrame#sensorCard_2 { background: #F4F0FF; border: 1px solid #D8CCFF; }"
+        "QFrame#sensorCard_3 { background: #FFF9D6; border: 1px solid #F7DF79; }"
+        "QFrame#sensorCard_4 { background: #EDFFF3; border: 1px solid #BFE8C8; }"
+        "QFrame#sensorCard_5 { background: #F1F5F9; border: 1px solid #CBD5E1; }"
         "QLabel#sensorName {"
         "  font-size: 15px;"
-        "  color: #46734d;"
+        "  color: #6B7280;"
         "}"
         "QLabel#sensorValue {"
         "  font-size: 21px;"
         "  font-weight: 700;"
-        "  color: #123f20;"
+        "  color: #111827;"
         "}"
         "QLabel#functionPlaceholder {"
-        "  background: #e2f4d5;"
-        "  border: 1px dashed #8bc084;"
+        "  background: #F9FAFB;"
+        "  border: 1px dashed #CBD5E1;"
         "  border-radius: 7px;"
-        "  color: #4a7653;"
-        "  font-size: 24px;"
+        "  color: #6B7280;"
+        "  font-size: 19px;"
         "  line-height: 150%;"
         "}"
         "QLabel#controlTitle {"
-        "  color: #1f5a31;"
+        "  color: #111827;"
         "  font-size: 24px;"
         "  font-weight: 700;"
         "}"
+        "QLabel#chartTitle {"
+        "  color: #374151;"
+        "  font-size: 16px;"
+        "  font-weight: 700;"
+        "}"
         "QFrame#controlCard {"
-        "  background: #e2f4d5;"
-        "  border: 1px solid #95cb90;"
+        "  background: #F7FAFF;"
+        "  border: 1px solid #D7E5F7;"
         "  border-radius: 7px;"
         "}"
         "QLabel#controlLabel {"
-        "  color: #46734d;"
+        "  color: #6B7280;"
         "  font-size: 18px;"
         "}"
         "QLabel#speedValue {"
-        "  color: #123f20;"
+        "  color: #111827;"
         "  font-size: 24px;"
         "  font-weight: 700;"
         "}"
         "QLabel#motorStatus {"
-        "  color: #4b7654;"
+        "  color: #6B7280;"
         "  font-size: 18px;"
         "}"
         "QFrame#qualityRow {"
-        "  background: #e2f4d5;"
-        "  border: 1px solid #95cb90;"
+        "  background: #FFFFFF;"
+        "  border: 1px solid #DDE6F2;"
         "  border-radius: 7px;"
         "}"
         "QLabel#qualityName {"
-        "  color: #46734d;"
+        "  color: #6B7280;"
         "  font-size: 17px;"
         "  font-weight: 700;"
         "}"
         "QLabel#qualityValue {"
-        "  color: #123f20;"
+        "  color: #111827;"
         "  font-size: 19px;"
         "  font-weight: 700;"
         "}"
         "QLabel#qualityReason {"
-        "  color: #4b7654;"
+        "  color: #4B5563;"
         "  font-size: 16px;"
         "  line-height: 140%;"
         "}"
+        "QFrame#metricCard_blue, QFrame#metricCard_green, QFrame#metricCard_red, QFrame#metricCard_purple, QFrame#metricCard {"
+        "  background: #FFFFFF;"
+        "  border: 1px solid #DDE6F2;"
+        "  border-radius: 7px;"
+        "}"
+        "QFrame#metricCard_blue { background: #EAF4FF; border: 1px solid #B9DCFF; }"
+        "QFrame#metricCard_green { background: #EDFFF3; border: 1px solid #BFE8C8; }"
+        "QFrame#metricCard_red { background: #FFF1F0; border: 1px solid #FFD1CD; }"
+        "QFrame#metricCard_purple { background: #F4F0FF; border: 1px solid #D8CCFF; }"
+        "QLabel#metricName {"
+        "  color: #6B7280;"
+        "  font-size: 14px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#metricValue {"
+        "  color: #111827;"
+        "  font-size: 22px;"
+        "  font-weight: 700;"
+        "}"
+        "QWidget#chartCanvas {"
+        "  background: #FFFFFF;"
+        "  border: 1px solid #DDE6F2;"
+        "  border-radius: 7px;"
+        "}"
+        "QScrollArea#panelScrollArea {"
+        "  background: transparent;"
+        "  border: none;"
+        "}"
+        "QWidget#panelScrollContent {"
+        "  background: transparent;"
+        "}"
+        "QScrollBar:vertical {"
+        "  background: transparent;"
+        "  width: 8px;"
+        "  margin: 0;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "  background: #CBD5E1;"
+        "  border-radius: 4px;"
+        "}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+        "  height: 0px;"
+        "}"
+        "QLabel#historyTitle {"
+        "  color: #111827;"
+        "  font-size: 34px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#historySummary {"
+        "  color: #4B5563;"
+        "  font-size: 18px;"
+        "  font-weight: 600;"
+        "}"
+        "QTableWidget#historyTable {"
+        "  background: #FFFFFF;"
+        "  alternate-background-color: #F4F8FF;"
+        "  border: 1px solid #DDE6F2;"
+        "  border-radius: 8px;"
+        "  color: #111827;"
+        "  font-size: 17px;"
+        "  gridline-color: transparent;"
+        "}"
+        "QTableWidget#historyTable::item {"
+        "  padding: 10px;"
+        "}"
+        "QHeaderView::section {"
+        "  background: #EAF4FF;"
+        "  color: #005BBB;"
+        "  border: none;"
+        "  padding: 10px;"
+        "  font-size: 16px;"
+        "  font-weight: 700;"
+        "}"
         "QSlider#speedSlider::groove:horizontal {"
-        "  height: 10px;"
-        "  background: #c4e7b9;"
-        "  border-radius: 5px;"
+        "  height: 6px;"
+        "  background: #E5E7EB;"
+        "  border-radius: 3px;"
+        "}"
+        "QSlider#speedSlider::sub-page:horizontal {"
+        "  background: #007AFF;"
+        "  border-radius: 3px;"
         "}"
         "QSlider#speedSlider::handle:horizontal {"
-        "  width: 28px;"
-        "  margin: -9px 0;"
-        "  border-radius: 14px;"
-        "  background: #4a9b55;"
+        "  width: 30px;"
+        "  height: 30px;"
+        "  margin: -12px 0;"
+        "  border-radius: 8px;"
+        "  background: #ffffff;"
+        "  border: 1px solid #CBD5E1;"
         "}"
     );
 }
@@ -1282,7 +2162,7 @@ void MainWindow::updateSensorCards(const SensorSnapshot &snapshot)
         }
     }
 
-    m_sensorStatusLabel->setText("仅环境数据");
+    m_sensorStatusLabel->clear();
 }
 
 void MainWindow::startSensorProcess()
@@ -1452,10 +2332,65 @@ void MainWindow::setVideoMessage(const QString &message)
 
 double MainWindow::currentConveyorSpeed() const
 {
-    if (!m_conveyorSpeedSlider) {
-        return 0.3;
+    if (m_conveyorSpeedGear == 0) {
+        return m_conveyorSlowSpeedMs;
     }
-    return static_cast<double>(m_conveyorSpeedSlider->value()) / 10.0;
+    if (m_conveyorSpeedGear == 2) {
+        return m_conveyorFastSpeedMs;
+    }
+    return m_conveyorMediumSpeedMs;
+}
+
+QString MainWindow::currentConveyorGearName() const
+{
+    if (m_conveyorSpeedGear == 0) {
+        return "一档 慢";
+    }
+    if (m_conveyorSpeedGear == 2) {
+        return "三档 快";
+    }
+    return "二档 中";
+}
+
+void MainWindow::selectConveyorSpeedGear(int gear)
+{
+    m_conveyorSpeedGear = qMax(0, qMin(2, gear));
+    updateConveyorGearButtons();
+    applyConveyorSpeed();
+}
+
+void MainWindow::updateConveyorGearButtons()
+{
+    if (m_conveyorSlowButton) {
+        m_conveyorSlowButton->setChecked(m_conveyorSpeedGear == 0);
+        m_conveyorSlowButton->setText(QString("一档\n慢 %1").arg(m_conveyorSlowSpeedMs, 0, 'f', 2));
+    }
+    if (m_conveyorMediumButton) {
+        m_conveyorMediumButton->setChecked(m_conveyorSpeedGear == 1);
+        m_conveyorMediumButton->setText(QString("二档\n中 %1").arg(m_conveyorMediumSpeedMs, 0, 'f', 2));
+    }
+    if (m_conveyorFastButton) {
+        m_conveyorFastButton->setChecked(m_conveyorSpeedGear == 2);
+        m_conveyorFastButton->setText(QString("三档\n快 %1").arg(m_conveyorFastSpeedMs, 0, 'f', 2));
+    }
+    if (m_conveyorSpeedValueLabel) {
+        m_conveyorSpeedValueLabel->setText(QString("%1  %2 m/s")
+                                           .arg(currentConveyorGearName())
+                                           .arg(currentConveyorSpeed(), 0, 'f', 2));
+    }
+}
+
+void MainWindow::updateConveyorRunButtons()
+{
+    if (m_conveyorForwardButton) {
+        m_conveyorForwardButton->setChecked(m_conveyorDirection > 0);
+    }
+    if (m_conveyorReverseButton) {
+        m_conveyorReverseButton->setChecked(m_conveyorDirection < 0);
+    }
+    if (m_conveyorStopButton) {
+        m_conveyorStopButton->setChecked(m_conveyorDirection == 0);
+    }
 }
 
 void MainWindow::updateConveyorSpeedLabel(int value)
@@ -1478,6 +2413,7 @@ void MainWindow::startConveyorForward()
 {
     m_conveyorDirection = 1;
     m_conveyorWasStarted = true;
+    updateConveyorRunButtons();
     runMotorCommand("forward");
 }
 
@@ -1485,6 +2421,7 @@ void MainWindow::startConveyorReverse()
 {
     m_conveyorDirection = -1;
     m_conveyorWasStarted = true;
+    updateConveyorRunButtons();
     runMotorCommand("reverse");
 }
 
@@ -1493,6 +2430,7 @@ void MainWindow::stopConveyor()
     const bool shouldSendStop = m_conveyorWasStarted || m_conveyorDirection != 0;
     m_conveyorDirection = 0;
     m_conveyorWasStarted = false;
+    updateConveyorRunButtons();
     if (shouldSendStop) {
         runMotorCommand("stop");
     } else if (m_motorStatusLabel) {
@@ -1502,47 +2440,77 @@ void MainWindow::stopConveyor()
 
 void MainWindow::runMotorCommand(const QString &command)
 {
+    if (m_motorCommandProcess->state() != QProcess::NotRunning) {
+        m_motorCommandProcess->kill();
+        m_motorCommandProcess->waitForFinished(100);
+    }
+
     QStringList args;
     args << kMotorCommandScript << command;
     if (command != "stop") {
-        args << "--speed-ms" << QString::number(currentConveyorSpeed(), 'f', 1);
+        args << "--speed-ms" << QString::number(currentConveyorSpeed(), 'f', 2);
     }
 
-    QProcess process;
-    process.setWorkingDirectory("/home/elf/projects");
-    process.start("python3", args);
-    if (!process.waitForStarted(1000)) {
+    const QString displayCommand = command;
+    const double displaySpeed = currentConveyorSpeed();
+    const QString displayGear = currentConveyorGearName();
+
+    if (m_motorStatusLabel) {
+        if (command == "forward") {
+            m_motorStatusLabel->setText(QString("状态：正在切换 正转 %1 %2 m/s")
+                                        .arg(displayGear)
+                                        .arg(displaySpeed, 0, 'f', 2));
+        } else if (command == "reverse") {
+            m_motorStatusLabel->setText(QString("状态：正在切换 反转 %1 %2 m/s")
+                                        .arg(displayGear)
+                                        .arg(displaySpeed, 0, 'f', 2));
+        } else {
+            m_motorStatusLabel->setText("状态：正在停止");
+        }
+    }
+
+    m_motorCommandProcess->setWorkingDirectory("/home/elf/projects");
+    m_motorCommandProcess->start("python3", args);
+
+    if (!m_motorCommandProcess->waitForStarted(80)) {
         if (m_motorStatusLabel) {
             m_motorStatusLabel->setText("状态：电机命令启动失败");
         }
-        return;
     }
 
-    process.waitForFinished(2000);
-    const QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
-    const QString error = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+    QProcess *process = m_motorCommandProcess;
+    disconnect(process,
+               static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+               this,
+               nullptr);
+    connect(process,
+            static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+            this,
+            [this, process, displayCommand, displaySpeed, displayGear](int exitCode, QProcess::ExitStatus exitStatus) {
+                const QString output = QString::fromLocal8Bit(process->readAllStandardOutput()).trimmed();
+                const QString error = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
 
-    if (process.state() != QProcess::NotRunning) {
-        process.kill();
-        process.waitForFinished(500);
-    }
+                if (!m_motorStatusLabel) {
+                    return;
+                }
 
-    if (!m_motorStatusLabel) {
-        return;
-    }
-
-    if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
-        if (command == "forward") {
-            m_motorStatusLabel->setText(QString("状态：正转 %1 m/s").arg(currentConveyorSpeed(), 0, 'f', 1));
-        } else if (command == "reverse") {
-            m_motorStatusLabel->setText(QString("状态：反转 %1 m/s").arg(currentConveyorSpeed(), 0, 'f', 1));
-        } else {
-            m_motorStatusLabel->setText("状态：已停止");
-        }
-    } else {
-        const QString message = !error.isEmpty() ? error : output;
-        m_motorStatusLabel->setText("状态：命令失败 " + message.left(80));
-    }
+                if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                    if (displayCommand == "forward") {
+                        m_motorStatusLabel->setText(QString("状态：正转 %1 %2 m/s")
+                                                    .arg(displayGear)
+                                                    .arg(displaySpeed, 0, 'f', 2));
+                    } else if (displayCommand == "reverse") {
+                        m_motorStatusLabel->setText(QString("状态：反转 %1 %2 m/s")
+                                                    .arg(displayGear)
+                                                    .arg(displaySpeed, 0, 'f', 2));
+                    } else {
+                        m_motorStatusLabel->setText("状态：已停止");
+                    }
+                } else {
+                    const QString message = !error.isEmpty() ? error : output;
+                    m_motorStatusLabel->setText("状态：命令失败 " + message.left(80));
+                }
+            });
 }
 
 void MainWindow::loadConveyorSpeedRange()
@@ -1558,6 +2526,9 @@ void MainWindow::loadConveyorSpeedRange()
     double minSpeed = m_conveyorMinSpeedX10 / 10.0;
     double maxSpeed = m_conveyorMaxSpeedX10 / 10.0;
     double defaultSpeed = m_conveyorDefaultSpeedX10 / 10.0;
+    double slowSpeed = m_conveyorSlowSpeedMs;
+    double mediumSpeed = m_conveyorMediumSpeedMs;
+    double fastSpeed = m_conveyorFastSpeedMs;
 
     while (!stream.atEnd()) {
         const QString rawLine = stream.readLine();
@@ -1602,6 +2573,12 @@ void MainWindow::loadConveyorSpeedRange()
             maxSpeed = number;
         } else if (key == "default_speed_ms") {
             defaultSpeed = number;
+        } else if (key == "slow_speed_ms") {
+            slowSpeed = number;
+        } else if (key == "medium_speed_ms") {
+            mediumSpeed = number;
+        } else if (key == "fast_speed_ms") {
+            fastSpeed = number;
         }
     }
 
@@ -1613,20 +2590,63 @@ void MainWindow::loadConveyorSpeedRange()
     m_conveyorMaxSpeedX10 = qMax(m_conveyorMinSpeedX10, static_cast<int>(qRound(maxSpeed * 10.0)));
     m_conveyorDefaultSpeedX10 = static_cast<int>(qRound(defaultSpeed * 10.0));
     m_conveyorDefaultSpeedX10 = qMax(m_conveyorMinSpeedX10, qMin(m_conveyorMaxSpeedX10, m_conveyorDefaultSpeedX10));
+    m_conveyorSlowSpeedMs = qMax(minSpeed, qMin(maxSpeed, slowSpeed));
+    m_conveyorMediumSpeedMs = qMax(minSpeed, qMin(maxSpeed, mediumSpeed));
+    m_conveyorFastSpeedMs = qMax(minSpeed, qMin(maxSpeed, fastSpeed));
+    if (m_conveyorSlowSpeedMs > m_conveyorMediumSpeedMs) {
+        qSwap(m_conveyorSlowSpeedMs, m_conveyorMediumSpeedMs);
+    }
+    if (m_conveyorMediumSpeedMs > m_conveyorFastSpeedMs) {
+        qSwap(m_conveyorMediumSpeedMs, m_conveyorFastSpeedMs);
+    }
+    if (defaultSpeed <= (m_conveyorSlowSpeedMs + m_conveyorMediumSpeedMs) * 0.5) {
+        m_conveyorSpeedGear = 0;
+    } else if (defaultSpeed >= (m_conveyorMediumSpeedMs + m_conveyorFastSpeedMs) * 0.5) {
+        m_conveyorSpeedGear = 2;
+    } else {
+        m_conveyorSpeedGear = 1;
+    }
 }
 
 void MainWindow::moveServoToPosition1()
 {
+    if (m_servoPosition1Button) {
+        m_servoPosition1Button->setChecked(true);
+    }
+    if (m_servoPosition2Button) {
+        m_servoPosition2Button->setChecked(false);
+    }
+    if (m_servoPosition3Button) {
+        m_servoPosition3Button->setChecked(false);
+    }
     runServoCommand("1", "1号 -45度");
 }
 
 void MainWindow::moveServoToPosition2()
 {
+    if (m_servoPosition1Button) {
+        m_servoPosition1Button->setChecked(false);
+    }
+    if (m_servoPosition2Button) {
+        m_servoPosition2Button->setChecked(true);
+    }
+    if (m_servoPosition3Button) {
+        m_servoPosition3Button->setChecked(false);
+    }
     runServoCommand("2", "2号 0度");
 }
 
 void MainWindow::moveServoToPosition3()
 {
+    if (m_servoPosition1Button) {
+        m_servoPosition1Button->setChecked(false);
+    }
+    if (m_servoPosition2Button) {
+        m_servoPosition2Button->setChecked(false);
+    }
+    if (m_servoPosition3Button) {
+        m_servoPosition3Button->setChecked(true);
+    }
     runServoCommand("3", "3号 45度");
 }
 
@@ -1726,7 +2746,8 @@ void MainWindow::applyLedBrightness()
         m_ledAutoTimer->stop();
     }
     if (m_ledAutoButton) {
-        m_ledAutoButton->setText("自动调节：关");
+        m_ledAutoButton->setChecked(false);
+        m_ledAutoButton->setText("自动调节  关");
     }
     m_ledHasFilteredLux = false;
     m_ledLastAutoAdjustMs = 0;
@@ -1742,7 +2763,8 @@ void MainWindow::turnLedOff()
         m_ledAutoTimer->stop();
     }
     if (m_ledAutoButton) {
-        m_ledAutoButton->setText("自动调节：关");
+        m_ledAutoButton->setChecked(false);
+        m_ledAutoButton->setText("自动调节  关");
     }
     m_ledHasFilteredLux = false;
     m_ledLastAutoAdjustMs = 0;
@@ -1758,7 +2780,8 @@ void MainWindow::toggleLedAutoMode()
 {
     m_ledAutoEnabled = !m_ledAutoEnabled;
     if (m_ledAutoButton) {
-        m_ledAutoButton->setText(m_ledAutoEnabled ? "自动调节：开" : "自动调节：关");
+        m_ledAutoButton->setChecked(m_ledAutoEnabled);
+        m_ledAutoButton->setText(m_ledAutoEnabled ? "自动调节  开" : "自动调节  关");
     }
 
     if (m_ledAutoEnabled) {

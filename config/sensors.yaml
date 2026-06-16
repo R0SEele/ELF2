@@ -38,6 +38,8 @@ sensors:
     poll_interval_s: 0.2
 
   gy302:
+    # GY-302/BH1750 light sensor is active.
+    enabled: true
     # I2C bus index (e.g. /dev/i2c-4). / I2C 总线索引，例如 /dev/i2c-4。
     bus: 4
     # I2C slave address in hex string. / I2C 从设备地址，十六进制字符串。

@@ -27,3 +27,25 @@ servo:
     center_deg: 0.0
     left_deg: -45.0
     right_deg: 45.0
+
+  auto_sort:
+    enabled: true
+    # Delay from completed camera/fusion decision to sorter action.
+    # Tune this after measuring camera-to-servo distance and conveyor speed.
+    delay_s: 0.8
+    reset_to_center: true
+    reset_delay_s: 0.45
+    default_position: "2"
+    log_csv: /home/elf/projects/datas/csv/mango_sorter_events.csv
+    channel_positions:
+      销售通道: "2"
+      催熟通道: "1"
+      加工通道: "3"
+      复检通道: "3"
+      剔除通道: "3"
+      等待数据: "2"
+    grade_positions:
+      A级: "2"
+      B级: "1"
+      C级: "3"
+      剔除: "3"
