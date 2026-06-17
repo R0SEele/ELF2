@@ -9,13 +9,20 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLayout>
+#include <QFileInfo>
+#include <QImage>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPainter>
 #include <QPixmap>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QSizePolicy>
 #include <QSpacerItem>
+#include <QStyle>
 #include <QTextStream>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QtGlobal>
 
@@ -29,6 +36,12 @@ const char *kMangoQualityScript = "/home/elf/projects/src/software/mango_quality
 const char *kMotorCommandScript = "/home/elf/projects/src/hardware/motor/conveyor_cli.py";
 const char *kLedCommandScript = "/home/elf/projects/src/hardware/led/ws2812b.py";
 const char *kServoCommandScript = "/home/elf/projects/src/hardware/servo/sorter.py";
+const char *kProjectTitle = "芒果端侧AI视觉质检与智能分拣系统";
+const char *kLogoPath = "/home/elf/projects/logo.jpeg";
+const char *kTuyaIotElf = "/home/elf/projects/iot/TuyaOpen/apps/tuya_cloud/fruit_quality_cloud/dist/fruit_quality_cloud_0.1.0/fruit_quality_cloud_0.1.0.elf";
+const char *kTuyaIotWorkDir = "/home/elf/projects/iot/TuyaOpen/apps/tuya_cloud/fruit_quality_cloud/dist/fruit_quality_cloud_0.1.0";
+const char *kTuyaIotProcessPattern = "[f]ruit_quality_cloud_0.1.0.elf";
+const char *kNetworkProbeUrl = "https://openapi.tuyacn.com";
 const char *kMotorConfigFile = "/home/elf/projects/config/motor.yaml";
 const char *kSensorCsvFile = "/home/elf/projects/datas/csv/sensor_realtime.csv";
 const char *kMangoQualityCsvFile = "/home/elf/projects/datas/csv/mango_quality_realtime.csv";
@@ -38,6 +51,8 @@ const int kEnvironmentSampleIntervalS = 5;
 const int kSensorRefreshIntervalMs = 5000;
 const int kLedAutoIntervalMs = 5000;
 const int kLedAutoMinAdjustGapMs = 4500;
+const int kIotStatusIntervalMs = 5000;
+const int kIotNetworkTimeoutMs = 4000;
 const int kLedAutoDeadbandLux = 100;
 const int kLedAutoMediumErrorLux = 300;
 const int kLedAutoLargeErrorLux = 600;
@@ -83,6 +98,27 @@ public:
         return QSize(0, 0);
     }
 };
+
+QPixmap loadStartLogo()
+{
+    QImage image(kLogoPath);
+    if (image.isNull()) {
+        return QPixmap();
+    }
+
+    image = image.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < image.height(); ++y) {
+        QRgb *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const QRgb pixel = line[x];
+            if (qRed(pixel) < 24 && qGreen(pixel) < 24 && qBlue(pixel) < 24) {
+                line[x] = qRgba(qRed(pixel), qGreen(pixel), qBlue(pixel), 0);
+            }
+        }
+    }
+
+    return QPixmap::fromImage(image);
+}
 }
 
 VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
@@ -353,6 +389,136 @@ void BarChartWidget::paintEvent(QPaintEvent *event)
     }
 }
 
+QualityScoreWidget::QualityScoreWidget(QWidget *parent)
+    : QWidget(parent),
+      m_score(0.0),
+      m_status("等待数据"),
+      m_color("#2F6B4F")
+{
+    setObjectName("qualityScoreCanvas");
+    setMinimumSize(128, 128);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+}
+
+void QualityScoreWidget::setScore(double score, const QString &status, const QColor &color)
+{
+    m_score = qBound(0.0, score, 100.0);
+    m_status = status;
+    m_color = color;
+    update();
+}
+
+void QualityScoreWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const int side = qMin(width(), height()) - 14;
+    const QRectF ringRect((width() - side) / 2.0, 8, side, side);
+    const int penWidth = qMax(12, side / 12);
+
+    painter.setPen(QPen(QColor("#E1E6DD"), penWidth, Qt::SolidLine, Qt::RoundCap));
+    painter.drawArc(ringRect.adjusted(penWidth / 2.0, penWidth / 2.0, -penWidth / 2.0, -penWidth / 2.0), 90 * 16, -360 * 16);
+
+    painter.setPen(QPen(m_color, penWidth, Qt::SolidLine, Qt::RoundCap));
+    painter.drawArc(ringRect.adjusted(penWidth / 2.0, penWidth / 2.0, -penWidth / 2.0, -penWidth / 2.0),
+                    90 * 16,
+                    -qRound(360.0 * 16.0 * m_score / 100.0));
+
+    painter.setPen(QColor("#26352A"));
+    QFont scoreFont = painter.font();
+    scoreFont.setPointSize(qMax(18, side / 6));
+    scoreFont.setBold(true);
+    painter.setFont(scoreFont);
+    painter.drawText(ringRect.adjusted(0, side * 0.16, 0, -side * 0.18),
+                     Qt::AlignCenter,
+                     QString::number(qRound(m_score)));
+
+    QFont statusFont = painter.font();
+    statusFont.setPointSize(qMax(9, side / 15));
+    statusFont.setBold(true);
+    painter.setFont(statusFont);
+    painter.setPen(QColor("#697468"));
+    painter.drawText(ringRect.adjusted(8, side * 0.58, -8, -side * 0.08),
+                     Qt::AlignCenter | Qt::TextWordWrap,
+                     m_status);
+}
+
+QualityFactorWidget::QualityFactorWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    setObjectName("qualityFactorCanvas");
+    setMinimumHeight(188);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+}
+
+void QualityFactorWidget::setData(const QStringList &labels, const QVector<double> &values, const QStringList &details, const QVector<QColor> &colors)
+{
+    m_labels = labels;
+    m_values = values;
+    m_details = details;
+    m_colors = colors;
+    update();
+}
+
+void QualityFactorWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.fillRect(rect(), Qt::transparent);
+
+    const int count = qMin(m_labels.size(), m_values.size());
+    if (count <= 0) {
+        return;
+    }
+
+    const int left = 8;
+    const int right = width() - 8;
+    const int rowH = qMax(30, (height() - 6) / count);
+    const int barLeft = left + 72;
+    const int barRight = right - 42;
+    const int barW = qMax(1, barRight - barLeft);
+
+    QFont labelFont = painter.font();
+    labelFont.setPointSize(10);
+    labelFont.setBold(true);
+    QFont detailFont = painter.font();
+    detailFont.setPointSize(8);
+
+    for (int i = 0; i < count; ++i) {
+        const int y = 4 + i * rowH;
+        const double value = qBound(0.0, m_values.at(i), 100.0);
+        const QColor color = i < m_colors.size() ? m_colors.at(i) : QColor("#2F6B4F");
+        const QString detail = i < m_details.size() ? m_details.at(i) : QString();
+
+        painter.setFont(labelFont);
+        painter.setPen(QColor("#26352A"));
+        painter.drawText(QRect(left, y, 66, 20), Qt::AlignLeft | Qt::AlignVCenter, m_labels.at(i));
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor("#E9EEE6"));
+        const QRectF track(barLeft, y + 7, barW, 12);
+        painter.drawRoundedRect(track, 6, 6);
+        painter.setBrush(color);
+        painter.drawRoundedRect(QRectF(barLeft, y + 7, barW * value / 100.0, 12), 6, 6);
+
+        painter.setFont(labelFont);
+        painter.setPen(QColor("#26352A"));
+        painter.drawText(QRect(barRight + 8, y, 34, 20), Qt::AlignRight | Qt::AlignVCenter, QString::number(qRound(value)));
+
+        painter.setFont(detailFont);
+        painter.setPen(QColor("#697468"));
+        const QString clippedDetail = painter.fontMetrics().elidedText(detail, Qt::ElideRight, qMax(1, right - barLeft));
+        painter.drawText(QRect(barLeft, y + 21, qMax(1, right - barLeft), rowH - 21),
+                         Qt::AlignLeft | Qt::AlignTop,
+                         clippedDetail);
+    }
+}
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
       m_pages(new QStackedWidget(this)),
@@ -368,6 +534,11 @@ MainWindow::MainWindow(QWidget *parent)
       m_mangoQualityProcess(new QProcess(this)),
       m_cameraProcess(new QProcess(this)),
       m_motorCommandProcess(new QProcess(this)),
+      m_tuyaIotProcess(new QProcess(this)),
+      m_iotStatusTimer(new QTimer(this)),
+      m_iotNetworkManager(new QNetworkAccessManager(this)),
+      m_iotNetworkReply(nullptr),
+      m_networkStatusLabel(nullptr),
       m_sensorReader(kSensorCsvFile),
       m_conveyorSpeedSlider(nullptr),
       m_conveyorSpeedValueLabel(nullptr),
@@ -400,6 +571,8 @@ MainWindow::MainWindow(QWidget *parent)
       m_mangoDataValueLabel(nullptr),
       m_mangoQualityStatusLabel(nullptr),
       m_mangoReasonLabel(nullptr),
+      m_mangoScoreChart(nullptr),
+      m_mangoFactorChart(nullptr),
       m_batchTotalValueLabel(nullptr),
       m_batchSaleableValueLabel(nullptr),
       m_batchRejectValueLabel(nullptr),
@@ -427,9 +600,10 @@ MainWindow::MainWindow(QWidget *parent)
       m_ledAutoEnabled(false),
       m_ledWasStarted(false),
       m_conveyorWasStarted(false),
+      m_tuyaIotStartedByQt(false),
       m_shutdownDone(false)
 {
-    setWindowTitle("水果端侧AI视觉质检系统");
+    setWindowTitle(kProjectTitle);
     setMinimumSize(0, 0);
     setCentralWidget(m_pages);
     m_pages->setContentsMargins(0, 0, 0, 0);
@@ -465,6 +639,19 @@ MainWindow::MainWindow(QWidget *parent)
             this,
             &MainWindow::handleCameraFinished);
 
+    m_tuyaIotProcess->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_tuyaIotProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::readTuyaIotMessages);
+    connect(m_tuyaIotProcess, &QProcess::readyReadStandardError, this, &MainWindow::readTuyaIotMessages);
+    connect(m_tuyaIotProcess,
+            static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+            this,
+            &MainWindow::handleTuyaIotFinished);
+    connect(m_iotStatusTimer, &QTimer::timeout, this, &MainWindow::updateIotStatus);
+    m_iotStatusTimer->setInterval(kIotStatusIntervalMs);
+    startTuyaIotProcess();
+    updateIotStatus();
+    m_iotStatusTimer->start();
+
     connect(m_ledAutoTimer, &QTimer::timeout, this, &MainWindow::updateLedAutoControl);
     m_ledAutoTimer->setInterval(kLedAutoIntervalMs);
 }
@@ -472,6 +659,7 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     shutdownHardware();
+    stopTuyaIotProcess();
 }
 
 void MainWindow::shutdownHardware()
@@ -578,7 +766,7 @@ void MainWindow::refreshSensorData()
 
 void MainWindow::refreshMangoQualityData()
 {
-    if (!m_mangoMaturityValueLabel) {
+    if (!m_mangoScoreChart) {
         refreshBatchStatsData();
         return;
     }
@@ -595,6 +783,13 @@ void MainWindow::refreshMangoQualityData()
         m_mangoStabilityValueLabel->setText("--");
         m_mangoYoloValueLabel->setText("--");
         m_mangoDataValueLabel->setText("等待融合结果");
+        m_mangoScoreChart->setScore(0, "等待数据", QColor("#697468"));
+        m_mangoFactorChart->setData(
+            {"成熟度", "参考糖度", "新鲜度", "稳定性", "YOLO"},
+            {0, 0, 0, 0, 0},
+            {"等待融合结果", "等待融合结果", "等待融合结果", "等待融合结果", "等待融合结果"},
+            {QColor("#C8D8D0"), QColor("#C8D8D0"), QColor("#C8D8D0"), QColor("#C8D8D0"), QColor("#C8D8D0")}
+        );
         if (m_mangoQualityStatusLabel) {
             m_mangoQualityStatusLabel->setText("状态：未读取到三模态融合结果");
         }
@@ -622,6 +817,7 @@ void MainWindow::refreshMangoQualityData()
 
     if (headerLine.isEmpty() || lastLine.isEmpty()) {
         m_mangoDataValueLabel->setText("等待融合结果");
+        m_mangoScoreChart->setScore(0, "等待数据", QColor("#697468"));
         if (m_mangoQualityStatusLabel) {
             m_mangoQualityStatusLabel->setText("状态：融合结果为空");
         }
@@ -651,11 +847,51 @@ void MainWindow::refreshMangoQualityData()
     const QString suggestedChannel = valueFor("suggested_channel", "--");
     const QString stableFrames = valueFor("stable_frames", QString());
     const QString consistency = valueFor("consistency_label", QString());
+    const QString consistencyScore = valueFor("consistency_score", QString());
     const QString yoloLabel = valueFor("yolo_label", "未检测到");
     const QString yoloConfidence = valueFor("yolo_confidence", QString());
     const QString dataStatus = valueFor("data_status", "等待数据");
     const QString reason = valueFor("reason", "暂无说明");
     const QString timestamp = valueFor("timestamp", QString());
+    auto scoreFor = [](const QString &text, double fallback = 0.0) {
+        bool ok = false;
+        const double value = text.toDouble(&ok);
+        return ok ? qBound(0.0, value, 100.0) : fallback;
+    };
+    auto ratioFor = [](const QString &text, double fallback = 0.0) {
+        bool ok = false;
+        const double value = text.toDouble(&ok);
+        if (!ok) {
+            return fallback;
+        }
+        return qBound(0.0, value <= 1.0 ? value * 100.0 : value, 100.0);
+    };
+
+    const double maturityValue = scoreFor(maturityScore);
+    const double sugarValue = scoreFor(valueFor("sugar_score", QString()));
+    const double rotRiskValue = scoreFor(rotScore);
+    const double freshnessValue = 100.0 - rotRiskValue;
+    const double stabilityValue = ratioFor(consistencyScore);
+    const double yoloValue = ratioFor(yoloConfidence);
+    const bool hasValidDetection = finalStatus != "无有效检测" && qualityGrade != "--";
+    const double overallScore = hasValidDetection
+        ? qBound(0.0,
+                 maturityValue * 0.30
+               + sugarValue * 0.20
+               + freshnessValue * 0.30
+               + stabilityValue * 0.10
+               + yoloValue * 0.10,
+                 100.0)
+        : 0.0;
+
+    QColor scoreColor("#697468");
+    if (finalStatus == "可接受") {
+        scoreColor = QColor("#2F6B4F");
+    } else if (finalStatus == "需要复检") {
+        scoreColor = QColor("#C77B2B");
+    } else if (finalStatus == "建议剔除") {
+        scoreColor = QColor("#A53A32");
+    }
 
     m_mangoMaturityValueLabel->setText(maturityScore.isEmpty() ? maturity : QString("%1  %2分").arg(maturity, maturityScore));
     m_mangoSugarValueLabel->setText(brixRange.isEmpty() ? sugar : QString("%1  %2").arg(sugar, brixRange));
@@ -672,7 +908,30 @@ void MainWindow::refreshMangoQualityData()
                                             .arg(stableFrames.isEmpty() ? "--" : stableFrames));
     }
     m_mangoYoloValueLabel->setText(yoloConfidence.isEmpty() ? yoloLabel : QString("%1  置信度%2").arg(yoloLabel, yoloConfidence));
-    m_mangoDataValueLabel->setText(dataStatus);
+    QString dataStatusText = dataStatus;
+    if (dataStatus.contains("vision_ok") && dataStatus.contains("spectrum_ok")) {
+        dataStatusText = "视觉+光谱";
+    } else if (dataStatus.contains("vision_ok")) {
+        dataStatusText = "仅视觉";
+    } else if (dataStatus.contains("spectrum_ok")) {
+        dataStatusText = "仅光谱";
+    } else if (dataStatus.contains("missing")) {
+        dataStatusText = "等待数据";
+    }
+    m_mangoDataValueLabel->setText(dataStatusText);
+    m_mangoScoreChart->setScore(overallScore, finalStatus, scoreColor);
+    m_mangoFactorChart->setData(
+        {"成熟度", "参考糖度", "新鲜度", "稳定性", "YOLO"},
+        {maturityValue, sugarValue, freshnessValue, stabilityValue, yoloValue},
+        {
+            maturityScore.isEmpty() ? maturity : QString("%1 / %2分").arg(maturity, maturityScore),
+            brixRange.isEmpty() ? sugar : QString("%1 / %2").arg(sugar, brixRange),
+            QString("%1 / 风险%2分").arg(rot, rotScore.isEmpty() ? "--" : rotScore),
+            stableFrames.isEmpty() ? consistency : QString("%1 / 连续%2帧").arg(consistency.isEmpty() ? "--" : consistency, stableFrames),
+            yoloConfidence.isEmpty() ? yoloLabel : QString("%1 / %2").arg(yoloLabel, yoloConfidence)
+        },
+        {QColor("#2F6B4F"), QColor("#C77B2B"), QColor("#4F7F5F"), QColor("#60705C"), QColor("#7A6A45")}
+    );
 
     if (m_mangoQualityStatusLabel) {
         m_mangoQualityStatusLabel->setText(timestamp.isEmpty() ? "状态：三模态融合结果" : "状态：更新于 " + timestamp);
@@ -959,66 +1218,101 @@ void MainWindow::handleCameraFinished(int exitCode, QProcess::ExitStatus exitSta
     }
 }
 
+void MainWindow::updateIotStatus()
+{
+    if (m_iotNetworkReply) {
+        return;
+    }
+
+    const bool processRunning = isTuyaIotProcessRunning();
+    if (!processRunning) {
+        setIotStatusText("物联网未运行", "offline");
+        startTuyaIotProcess();
+        return;
+    }
+
+    setIotStatusText("物联网运行中", "checking");
+
+    QNetworkRequest request{QUrl(kNetworkProbeUrl)};
+    m_iotNetworkReply = m_iotNetworkManager->get(request);
+
+    QTimer::singleShot(kIotNetworkTimeoutMs, this, [this]() {
+        if (m_iotNetworkReply && m_iotNetworkReply->isRunning()) {
+            m_iotNetworkReply->abort();
+        }
+    });
+
+    connect(m_iotNetworkReply, &QNetworkReply::finished, this, [this]() {
+        QNetworkReply *reply = m_iotNetworkReply;
+        if (!reply) {
+            return;
+        }
+
+        const bool networkOk = reply->error() == QNetworkReply::NoError
+                               || reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).isValid();
+        reply->deleteLater();
+        m_iotNetworkReply = nullptr;
+
+        if (!isTuyaIotProcessRunning()) {
+            setIotStatusText("物联网未运行", "offline");
+        } else if (networkOk) {
+            setIotStatusText("网络正常", "online");
+        } else {
+            setIotStatusText("网络待确认", "warning");
+        }
+    });
+}
+
+void MainWindow::readTuyaIotMessages()
+{
+    m_tuyaIotProcess->readAllStandardOutput();
+    m_tuyaIotProcess->readAllStandardError();
+}
+
+void MainWindow::handleTuyaIotFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    Q_UNUSED(exitCode);
+    Q_UNUSED(exitStatus);
+    m_tuyaIotStartedByQt = false;
+    setIotStatusText("物联网未运行", "offline");
+}
+
 QWidget *MainWindow::createStartPage()
 {
     QWidget *page = new QWidget;
     page->setObjectName("startPage");
     page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
-    QHBoxLayout *layout = new QHBoxLayout(page);
-    layout->setContentsMargins(72, 56, 72, 56);
-    layout->setSpacing(34);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(54, 46, 54, 54);
+    layout->setSpacing(0);
 
-    QLabel *title = new QLabel("水果端侧AI视觉质检系统");
+    QLabel *logo = new QLabel;
+    logo->setObjectName("startLogo");
+    logo->setAlignment(Qt::AlignCenter);
+    logo->setFixedSize(860, 210);
+    const QPixmap logoPixmap = loadStartLogo();
+    if (!logoPixmap.isNull()) {
+        logo->setPixmap(logoPixmap.scaled(820, 190, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
+
+    QLabel *title = new QLabel(kProjectTitle);
     title->setObjectName("startTitle");
-    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    title->setAlignment(Qt::AlignCenter);
     title->setWordWrap(true);
 
     QPushButton *startButton = new QPushButton("开始检测");
     startButton->setObjectName("startButton");
-    startButton->setMinimumHeight(92);
-    startButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    startButton->setFixedSize(320, 78);
     connect(startButton, &QPushButton::clicked, this, &MainWindow::showWorkPage);
 
-    QVBoxLayout *leftLayout = new QVBoxLayout;
-    leftLayout->setSpacing(22);
-    QLabel *subtitle = new QLabel("实时检测、分拣控制、批次统计");
-    subtitle->setObjectName("startSubtitle");
-    subtitle->setWordWrap(true);
-    leftLayout->addStretch(1);
-    leftLayout->addWidget(title);
-    leftLayout->addWidget(subtitle);
-    leftLayout->addWidget(startButton);
-    leftLayout->addStretch(1);
-
-    QFrame *summaryPanel = new QFrame;
-    summaryPanel->setObjectName("startSummaryPanel");
-    QVBoxLayout *summaryLayout = new QVBoxLayout(summaryPanel);
-    summaryLayout->setContentsMargins(24, 22, 24, 22);
-    summaryLayout->setSpacing(14);
-
-    QLabel *summaryTitle = new QLabel("工作台");
-    summaryTitle->setObjectName("controlTitle");
-    QLabel *summaryLine1 = new QLabel("实时画面");
-    summaryLine1->setObjectName("startSummaryItem_orange");
-    QLabel *summaryLine2 = new QLabel("环境监测");
-    summaryLine2->setObjectName("startSummaryItem_blue");
-    QLabel *summaryLine3 = new QLabel("芒果品质");
-    summaryLine3->setObjectName("startSummaryItem_green");
-    QLabel *summaryLine4 = new QLabel("批次历史");
-    summaryLine4->setObjectName("startSummaryItem_purple");
-    for (QLabel *label : {summaryLine1, summaryLine2, summaryLine3, summaryLine4}) {
-        label->setMinimumHeight(54);
-    }
-    summaryLayout->addWidget(summaryTitle);
-    summaryLayout->addWidget(summaryLine1);
-    summaryLayout->addWidget(summaryLine2);
-    summaryLayout->addWidget(summaryLine3);
-    summaryLayout->addWidget(summaryLine4);
-    summaryLayout->addStretch(1);
-
-    layout->addLayout(leftLayout, 5);
-    layout->addWidget(summaryPanel, 3);
+    layout->addStretch(1);
+    layout->addWidget(logo, 0, Qt::AlignHCenter);
+    layout->addSpacing(28);
+    layout->addWidget(title);
+    layout->addSpacing(42);
+    layout->addWidget(startButton, 0, Qt::AlignHCenter);
+    layout->addStretch(1);
 
     return page;
 }
@@ -1106,8 +1400,20 @@ QFrame *MainWindow::createVideoPanel()
     layout->setContentsMargins(12, 8, 12, 10);
     layout->setSpacing(6);
 
+    QHBoxLayout *header = new QHBoxLayout;
+    header->setContentsMargins(0, 0, 0, 0);
+    header->setSpacing(8);
+
     QLabel *title = new QLabel("检测视频实时画面");
     title->setObjectName("panelTitle");
+    m_networkStatusLabel = new QLabel("物联网启动中");
+    m_networkStatusLabel->setObjectName("networkStatus");
+    m_networkStatusLabel->setProperty("state", "checking");
+    m_networkStatusLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_networkStatusLabel->setMinimumHeight(30);
+
+    header->addWidget(title);
+    header->addWidget(m_networkStatusLabel, 0, Qt::AlignRight);
 
     AspectRatioVideoFrame *videoSurface = new AspectRatioVideoFrame;
     m_videoSurface = videoSurface;
@@ -1115,7 +1421,7 @@ QFrame *MainWindow::createVideoPanel()
     m_videoDisplay = new VideoDisplayWidget;
     videoSurface->setContentWidget(m_videoDisplay);
 
-    layout->addWidget(title);
+    layout->addLayout(header);
     layout->addWidget(videoSurface, 1);
 
     return panel;
@@ -1179,7 +1485,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
 
     QVBoxLayout *layout = new QVBoxLayout(panel);
     layout->setContentsMargins(12, 8, 12, 8);
-    layout->setSpacing(8);
+    layout->setSpacing(6);
 
     QLabel *title = new QLabel("功能区");
     title->setObjectName("panelTitle");
@@ -1484,33 +1790,34 @@ QWidget *MainWindow::createMangoQualityPage()
     page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(8);
 
     QPushButton *backButton = new QPushButton("返回功能区");
     backButton->setObjectName("secondaryButton");
-    backButton->setMinimumHeight(46);
+    backButton->setMinimumHeight(38);
     connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
 
-    QLabel *title = new QLabel("芒果状况");
+    QLabel *title = new QLabel("当前芒果");
     title->setObjectName("controlTitle");
 
     auto makeRow = [](const QString &name, QLabel **valueLabel) {
         QFrame *row = new QFrame;
         row->setObjectName("qualityRow");
-        row->setMinimumHeight(38);
-        row->setMaximumHeight(46);
+        row->setMinimumHeight(32);
+        row->setMaximumHeight(38);
         QHBoxLayout *rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(10, 4, 10, 4);
-        rowLayout->setSpacing(8);
+        rowLayout->setContentsMargins(8, 2, 8, 2);
+        rowLayout->setSpacing(5);
 
         QLabel *nameLabel = new QLabel(name);
         nameLabel->setObjectName("qualityName");
-        nameLabel->setMinimumWidth(92);
+        nameLabel->setMinimumWidth(70);
 
         QLabel *value = new QLabel("--");
         value->setObjectName("qualityValue");
         value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        value->setWordWrap(true);
+        value->setWordWrap(false);
+        value->setMinimumWidth(0);
 
         rowLayout->addWidget(nameLabel);
         rowLayout->addWidget(value, 1);
@@ -1518,18 +1825,69 @@ QWidget *MainWindow::createMangoQualityPage()
         return row;
     };
 
+    QFrame *summaryCard = new QFrame;
+    summaryCard->setObjectName("qualitySummaryCard");
+    QVBoxLayout *summaryLayout = new QVBoxLayout(summaryCard);
+    summaryLayout->setContentsMargins(10, 8, 10, 8);
+    summaryLayout->setSpacing(4);
+
+    QHBoxLayout *summaryTop = new QHBoxLayout;
+    summaryTop->setSpacing(8);
+    QLabel *idName = new QLabel("编号");
+    idName->setObjectName("qualityName");
+    m_mangoIdValueLabel = new QLabel("--");
+    m_mangoIdValueLabel->setObjectName("qualityBadge");
+    m_mangoIdValueLabel->setAlignment(Qt::AlignCenter);
+    m_mangoGradeValueLabel = new QLabel("--");
+    m_mangoGradeValueLabel->setObjectName("qualityBadgeStrong");
+    m_mangoGradeValueLabel->setAlignment(Qt::AlignCenter);
+    summaryTop->addWidget(idName);
+    summaryTop->addWidget(m_mangoIdValueLabel);
+    summaryTop->addStretch(1);
+    summaryTop->addWidget(m_mangoGradeValueLabel);
+
+    m_mangoFinalValueLabel = new QLabel("--");
+    m_mangoFinalValueLabel->setObjectName("qualityConclusion");
+    m_mangoFinalValueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_mangoFinalValueLabel->setWordWrap(true);
+    m_mangoFinalValueLabel->setMaximumHeight(54);
+
+    m_mangoChannelValueLabel = new QLabel("--");
+    m_mangoChannelValueLabel->setObjectName("qualityChannel");
+    m_mangoChannelValueLabel->setWordWrap(true);
+    m_mangoChannelValueLabel->setMaximumHeight(44);
+
+    summaryLayout->addLayout(summaryTop);
+    summaryLayout->addWidget(m_mangoFinalValueLabel);
+    summaryLayout->addWidget(m_mangoChannelValueLabel);
+
+    QFrame *scoreCard = new QFrame;
+    scoreCard->setObjectName("qualityChartCard");
+    QHBoxLayout *scoreLayout = new QHBoxLayout(scoreCard);
+    scoreLayout->setContentsMargins(8, 7, 8, 7);
+    scoreLayout->setSpacing(8);
+    m_mangoScoreChart = new QualityScoreWidget;
+    m_mangoScoreChart->setMaximumWidth(132);
+    m_mangoFactorChart = new QualityFactorWidget;
+    scoreLayout->addWidget(m_mangoScoreChart, 0, Qt::AlignVCenter);
+    scoreLayout->addWidget(m_mangoFactorChart, 1);
+
+    QGridLayout *detailGrid = new QGridLayout;
+    detailGrid->setContentsMargins(0, 0, 0, 0);
+    detailGrid->setHorizontalSpacing(6);
+    detailGrid->setVerticalSpacing(6);
+    detailGrid->addWidget(makeRow("成熟度", &m_mangoMaturityValueLabel), 0, 0);
+    detailGrid->addWidget(makeRow("糖度", &m_mangoSugarValueLabel), 0, 1);
+    detailGrid->addWidget(makeRow("腐烂", &m_mangoRotValueLabel), 1, 0);
+    detailGrid->addWidget(makeRow("稳定", &m_mangoStabilityValueLabel), 1, 1);
+    detailGrid->addWidget(makeRow("YOLO", &m_mangoYoloValueLabel), 2, 0);
+    detailGrid->addWidget(makeRow("数据", &m_mangoDataValueLabel), 2, 1);
+
     layout->addWidget(backButton);
     layout->addWidget(title);
-    layout->addWidget(makeRow("芒果编号", &m_mangoIdValueLabel));
-    layout->addWidget(makeRow("品质等级", &m_mangoGradeValueLabel));
-    layout->addWidget(makeRow("建议流向", &m_mangoChannelValueLabel));
-    layout->addWidget(makeRow("成熟度", &m_mangoMaturityValueLabel));
-    layout->addWidget(makeRow("参考糖度", &m_mangoSugarValueLabel));
-    layout->addWidget(makeRow("腐烂状况", &m_mangoRotValueLabel));
-    layout->addWidget(makeRow("综合结论", &m_mangoFinalValueLabel));
-    layout->addWidget(makeRow("稳定性", &m_mangoStabilityValueLabel));
-    layout->addWidget(makeRow("YOLO结果", &m_mangoYoloValueLabel));
-    layout->addWidget(makeRow("数据状态", &m_mangoDataValueLabel));
+    layout->addWidget(summaryCard);
+    layout->addWidget(scoreCard);
+    layout->addLayout(detailGrid);
 
     m_mangoQualityStatusLabel = new QLabel("状态：等待三模态融合结果");
     m_mangoQualityStatusLabel->setObjectName("motorStatus");
@@ -1762,77 +2120,61 @@ void MainWindow::applyGlobalStyle()
 {
     qApp->setStyleSheet(
         "QMainWindow, QWidget#startPage, QWidget#workPage, QWidget#historyPage {"
-        "  background: #EEF3F8;"
-        "  color: #1D1D1F;"
+        "  background: #F4F6F1;"
+        "  color: #1F2933;"
         "}"
         "QLabel {"
-        "  color: #1D1D1F;"
+        "  color: #1F2933;"
+        "}"
+        "QLabel#startLogo {"
+        "  background: transparent;"
         "}"
         "QLabel#startTitle {"
-        "  color: #111827;"
-        "  font-size: 46px;"
+        "  color: #26352A;"
+        "  font-size: 48px;"
         "  font-weight: 700;"
+        "  letter-spacing: 0px;"
         "}"
-        "QLabel#startSubtitle {"
-        "  color: #4B5563;"
-        "  font-size: 24px;"
-        "  font-weight: 600;"
-        "}"
-        "QFrame#startSummaryPanel {"
-        "  background: #FCFCFF;"
-        "  border: 1px solid #DDE6F2;"
-        "  border-radius: 8px;"
-        "}"
-        "QLabel#startSummaryItem_orange, QLabel#startSummaryItem_blue, QLabel#startSummaryItem_green, QLabel#startSummaryItem_purple {"
-        "  border-radius: 7px;"
-        "  font-size: 21px;"
-        "  font-weight: 700;"
-        "  padding-left: 16px;"
-        "}"
-        "QLabel#startSummaryItem_orange { background: #FFF3E6; color: #9A4F00; border: 1px solid #FFD29A; }"
-        "QLabel#startSummaryItem_blue { background: #EAF4FF; color: #005BBB; border: 1px solid #B9DCFF; }"
-        "QLabel#startSummaryItem_green { background: #EDFFF3; color: #137A35; border: 1px solid #BFE8C8; }"
-        "QLabel#startSummaryItem_purple { background: #F4F0FF; color: #4E3BBF; border: 1px solid #D8CCFF; }"
         "QPushButton#startButton {"
-        "  background: #0A84FF;"
+        "  background: #2F6B4F;"
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
-        "  font-size: 32px;"
+        "  font-size: 30px;"
         "  font-weight: 700;"
-        "  padding: 18px;"
+        "  padding: 12px 28px;"
         "}"
         "QPushButton#startButton:pressed {"
-        "  background: #005BBB;"
+        "  background: #244F3B;"
         "}"
         "QPushButton#exitButton {"
         "  background: #ffffff;"
-        "  color: #FF3B30;"
-        "  border: 1px solid #FFD1CD;"
+        "  color: #A53A32;"
+        "  border: 1px solid #E8C7C2;"
         "  border-radius: 8px;"
         "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 8px;"
         "}"
         "QPushButton#exitButton:pressed {"
-        "  background: #FFF1F0;"
+        "  background: #FBEDEA;"
         "}"
         "QPushButton#featureButton, QPushButton#featureButton_orange, QPushButton#featureButton_blue, QPushButton#featureButton_purple, QPushButton#featureButton_green, QPushButton#featureButton_indigo {"
-        "  color: #111827;"
+        "  color: #26352A;"
         "  border-radius: 8px;"
         "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 8px;"
         "}"
-        "QPushButton#featureButton { background: #ffffff; border: 1px solid #E5E7EB; }"
-        "QPushButton#featureButton_orange { background: #FFF3E6; color: #8A4300; border: 1px solid #FFD29A; }"
-        "QPushButton#featureButton_blue { background: #EAF4FF; color: #005BBB; border: 1px solid #B9DCFF; }"
-        "QPushButton#featureButton_purple { background: #F4F0FF; color: #4E3BBF; border: 1px solid #D8CCFF; }"
-        "QPushButton#featureButton_green { background: #EDFFF3; color: #137A35; border: 1px solid #BFE8C8; }"
-        "QPushButton#featureButton_indigo { background: #EEF2FF; color: #3443A8; border: 1px solid #C7D2FE; }"
+        "QPushButton#featureButton { background: #ffffff; border: 1px solid #D8DED3; }"
+        "QPushButton#featureButton_orange { background: #FFF4D8; color: #7A4B12; border: 1px solid #E9C879; }"
+        "QPushButton#featureButton_blue { background: #EAF1EE; color: #2D5C4A; border: 1px solid #C8D8D0; }"
+        "QPushButton#featureButton_purple { background: #F2EFE6; color: #604E2F; border: 1px solid #D9CFB8; }"
+        "QPushButton#featureButton_green { background: #E7F3EA; color: #1F6A43; border: 1px solid #B7D7C0; }"
+        "QPushButton#featureButton_indigo { background: #EEF0F3; color: #45505A; border: 1px solid #D0D6DC; }"
         "QPushButton#featureButton:pressed, QPushButton#featureButton_orange:pressed, QPushButton#featureButton_blue:pressed, QPushButton#featureButton_purple:pressed, QPushButton#featureButton_green:pressed, QPushButton#featureButton_indigo:pressed { background: #ffffff; }"
         "QPushButton#featureButtonProminent {"
-        "  background: #FF2D55;"
+        "  background: #C77B2B;"
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
@@ -1841,22 +2183,22 @@ void MainWindow::applyGlobalStyle()
         "  padding: 8px;"
         "}"
         "QPushButton#featureButtonProminent:pressed {"
-        "  background: #C9183C;"
+        "  background: #9C5D1B;"
         "}"
         "QFrame#functionSection {"
-        "  background: #FCFCFF;"
-        "  border: 1px solid #DDE6F2;"
+        "  background: #FFFFFF;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 8px;"
         "}"
         "QLabel#functionSectionTitle {"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "  font-size: 16px;"
         "  font-weight: 700;"
         "}"
         "QPushButton#secondaryButton {"
-        "  background: #EAF4FF;"
-        "  color: #0066CC;"
-        "  border: 1px solid #B9DCFF;"
+        "  background: #EAF1EE;"
+        "  color: #2D5C4A;"
+        "  border: 1px solid #C8D8D0;"
         "  border-radius: 7px;"
         "  font-size: 18px;"
         "  font-weight: 700;"
@@ -1864,18 +2206,18 @@ void MainWindow::applyGlobalStyle()
         "}"
         "QPushButton#runButton {"
         "  background: #ffffff;"
-        "  color: #007AFF;"
-        "  border: 1px solid #B9DCFF;"
+        "  color: #2F6B4F;"
+        "  border: 1px solid #B7D7C0;"
         "  border-radius: 8px;"
         "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 10px;"
         "}"
         "QPushButton#runButton:pressed {"
-        "  background: #EAF4FF;"
+        "  background: #E7F3EA;"
         "}"
         "QPushButton#stopButton {"
-        "  background: #FF3B30;"
+        "  background: #A53A32;"
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
@@ -1884,10 +2226,10 @@ void MainWindow::applyGlobalStyle()
         "  padding: 10px;"
         "}"
         "QPushButton#stopButton:pressed {"
-        "  background: #D70015;"
+        "  background: #7F2B25;"
         "}"
         "QPushButton#primaryControlButton {"
-        "  background: #007AFF;"
+        "  background: #2F6B4F;"
         "  color: white;"
         "  border: none;"
         "  border-radius: 8px;"
@@ -1896,38 +2238,38 @@ void MainWindow::applyGlobalStyle()
         "  padding: 10px;"
         "}"
         "QPushButton#primaryControlButton:pressed {"
-        "  background: #005BBB;"
+        "  background: #244F3B;"
         "}"
         "QPushButton#destructiveControlButton {"
-        "  background: #FFF1F0;"
-        "  color: #D70015;"
-        "  border: 1px solid #FFD1CD;"
+        "  background: #FBEDEA;"
+        "  color: #A53A32;"
+        "  border: 1px solid #E8C7C2;"
         "  border-radius: 8px;"
         "  font-size: 20px;"
         "  font-weight: 700;"
         "  padding: 10px;"
         "}"
         "QPushButton#destructiveControlButton:pressed {"
-        "  background: #FFDAD6;"
+        "  background: #F3D6D1;"
         "}"
         "QPushButton#switchButton {"
-        "  background: #E5E7EB;"
-        "  color: #4B5563;"
-        "  border: 1px solid #D1D5DB;"
+        "  background: #EEF0F3;"
+        "  color: #45505A;"
+        "  border: 1px solid #D0D6DC;"
         "  border-radius: 8px;"
         "  font-size: 19px;"
         "  font-weight: 700;"
         "  padding: 10px;"
         "}"
         "QPushButton#switchButton:checked {"
-        "  background: #34C759;"
+        "  background: #2F6B4F;"
         "  color: white;"
-        "  border: 1px solid #34C759;"
+        "  border: 1px solid #2F6B4F;"
         "}"
         "QPushButton#segmentLeft, QPushButton#segmentMiddle, QPushButton#segmentRight, QPushButton#gearLeft, QPushButton#gearMiddle, QPushButton#gearRight {"
-        "  background: #F2F2F7;"
-        "  color: #1D1D1F;"
-        "  border: 1px solid #D1D5DB;"
+        "  background: #EEF0F3;"
+        "  color: #1F2933;"
+        "  border: 1px solid #D0D6DC;"
         "  border-radius: 0px;"
         "  font-size: 18px;"
         "  font-weight: 700;"
@@ -1945,26 +2287,55 @@ void MainWindow::applyGlobalStyle()
         "  border-bottom-right-radius: 8px;"
         "}"
         "QPushButton#segmentLeft:checked, QPushButton#segmentMiddle:checked, QPushButton#segmentRight:checked, QPushButton#gearLeft:checked, QPushButton#gearMiddle:checked, QPushButton#gearRight:checked {"
-        "  background: #007AFF;"
+        "  background: #2F6B4F;"
         "  color: white;"
-        "  border-color: #007AFF;"
+        "  border-color: #2F6B4F;"
         "}"
         "QPushButton#segmentLeft:pressed, QPushButton#segmentMiddle:pressed, QPushButton#segmentRight:pressed, QPushButton#gearLeft:pressed, QPushButton#gearMiddle:pressed, QPushButton#gearRight:pressed {"
-        "  background: #DDEEFF;"
+        "  background: #DDE7E1;"
         "}"
         "QFrame#videoPanel, QFrame#sensorPanel, QFrame#functionPanel {"
-        "  background: #FCFCFF;"
-        "  border: 1px solid #DDE6F2;"
+        "  background: #FFFFFF;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 8px;"
         "}"
         "QLabel#panelTitle {"
         "  font-size: 21px;"
         "  font-weight: 700;"
-        "  color: #111827;"
+        "  color: #26352A;"
+        "}"
+        "QLabel#networkStatus {"
+        "  background: #EEF0F3;"
+        "  color: #45505A;"
+        "  border: 1px solid #D0D6DC;"
+        "  border-radius: 14px;"
+        "  font-size: 15px;"
+        "  font-weight: 700;"
+        "  padding: 3px 12px;"
+        "}"
+        "QLabel#networkStatus[state=\"online\"] {"
+        "  background: #E7F3EA;"
+        "  color: #1F6A43;"
+        "  border: 1px solid #B7D7C0;"
+        "}"
+        "QLabel#networkStatus[state=\"warning\"] {"
+        "  background: #FFF4D8;"
+        "  color: #7A4B12;"
+        "  border: 1px solid #E9C879;"
+        "}"
+        "QLabel#networkStatus[state=\"offline\"] {"
+        "  background: #FBEDEA;"
+        "  color: #A53A32;"
+        "  border: 1px solid #E8C7C2;"
+        "}"
+        "QLabel#networkStatus[state=\"checking\"] {"
+        "  background: #EEF0F3;"
+        "  color: #45505A;"
+        "  border: 1px solid #D0D6DC;"
         "}"
         "QFrame#videoSurface {"
-        "  background: #0B0F14;"
-        "  border: 1px solid #111827;"
+        "  background: #101713;"
+        "  border: 1px solid #26352A;"
         "  border-radius: 6px;"
         "}"
         "QWidget#videoState {"
@@ -1973,106 +2344,139 @@ void MainWindow::applyGlobalStyle()
         "  font-weight: 700;"
         "}"
         "QLabel#sensorStatus {"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "  font-size: 16px;"
         "}"
         "QFrame#sensorCard, QFrame#sensorCard_0, QFrame#sensorCard_1, QFrame#sensorCard_2, QFrame#sensorCard_3, QFrame#sensorCard_4, QFrame#sensorCard_5 {"
         "  border-radius: 7px;"
         "}"
-        "QFrame#sensorCard { background: #F9FAFB; border: 1px solid #E5E7EB; }"
-        "QFrame#sensorCard_0 { background: #FFF3E6; border: 1px solid #FFD29A; }"
-        "QFrame#sensorCard_1 { background: #EAF4FF; border: 1px solid #B9DCFF; }"
-        "QFrame#sensorCard_2 { background: #F4F0FF; border: 1px solid #D8CCFF; }"
-        "QFrame#sensorCard_3 { background: #FFF9D6; border: 1px solid #F7DF79; }"
-        "QFrame#sensorCard_4 { background: #EDFFF3; border: 1px solid #BFE8C8; }"
-        "QFrame#sensorCard_5 { background: #F1F5F9; border: 1px solid #CBD5E1; }"
+        "QFrame#sensorCard { background: #F7F8F4; border: 1px solid #D8DED3; }"
+        "QFrame#sensorCard_0 { background: #FFF4D8; border: 1px solid #E9C879; }"
+        "QFrame#sensorCard_1 { background: #E7F3EA; border: 1px solid #B7D7C0; }"
+        "QFrame#sensorCard_2 { background: #EEF0F3; border: 1px solid #D0D6DC; }"
+        "QFrame#sensorCard_3 { background: #FFF8E6; border: 1px solid #E7D390; }"
+        "QFrame#sensorCard_4 { background: #EAF1EE; border: 1px solid #C8D8D0; }"
+        "QFrame#sensorCard_5 { background: #F2EFE6; border: 1px solid #D9CFB8; }"
         "QLabel#sensorName {"
         "  font-size: 15px;"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "}"
         "QLabel#sensorValue {"
         "  font-size: 21px;"
         "  font-weight: 700;"
-        "  color: #111827;"
+        "  color: #26352A;"
         "}"
         "QLabel#functionPlaceholder {"
-        "  background: #F9FAFB;"
-        "  border: 1px dashed #CBD5E1;"
+        "  background: #F7F8F4;"
+        "  border: 1px dashed #C8D8D0;"
         "  border-radius: 7px;"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "  font-size: 19px;"
         "  line-height: 150%;"
         "}"
         "QLabel#controlTitle {"
-        "  color: #111827;"
+        "  color: #26352A;"
         "  font-size: 24px;"
         "  font-weight: 700;"
         "}"
         "QLabel#chartTitle {"
-        "  color: #374151;"
+        "  color: #3E4A3F;"
         "  font-size: 16px;"
         "  font-weight: 700;"
         "}"
         "QFrame#controlCard {"
-        "  background: #F7FAFF;"
-        "  border: 1px solid #D7E5F7;"
+        "  background: #F7F8F4;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 7px;"
         "}"
         "QLabel#controlLabel {"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "  font-size: 18px;"
         "}"
         "QLabel#speedValue {"
-        "  color: #111827;"
+        "  color: #26352A;"
         "  font-size: 24px;"
         "  font-weight: 700;"
         "}"
         "QLabel#motorStatus {"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "  font-size: 18px;"
+        "}"
+        "QFrame#qualitySummaryCard, QFrame#qualityChartCard {"
+        "  background: #FFFFFF;"
+        "  border: 1px solid #D8DED3;"
+        "  border-radius: 8px;"
+        "}"
+        "QLabel#qualityBadge {"
+        "  background: #F2EFE6;"
+        "  color: #604E2F;"
+        "  border: 1px solid #D9CFB8;"
+        "  border-radius: 8px;"
+        "  font-size: 14px;"
+        "  font-weight: 700;"
+        "  padding: 3px 8px;"
+        "}"
+        "QLabel#qualityBadgeStrong {"
+        "  background: #E7F3EA;"
+        "  color: #1F6A43;"
+        "  border: 1px solid #B7D7C0;"
+        "  border-radius: 8px;"
+        "  font-size: 15px;"
+        "  font-weight: 700;"
+        "  padding: 3px 10px;"
+        "}"
+        "QLabel#qualityConclusion {"
+        "  color: #26352A;"
+        "  font-size: 21px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#qualityChannel {"
+        "  color: #697468;"
+        "  font-size: 14px;"
+        "  font-weight: 700;"
         "}"
         "QFrame#qualityRow {"
         "  background: #FFFFFF;"
-        "  border: 1px solid #DDE6F2;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 7px;"
         "}"
         "QLabel#qualityName {"
-        "  color: #6B7280;"
-        "  font-size: 17px;"
+        "  color: #697468;"
+        "  font-size: 13px;"
         "  font-weight: 700;"
         "}"
         "QLabel#qualityValue {"
-        "  color: #111827;"
-        "  font-size: 19px;"
+        "  color: #26352A;"
+        "  font-size: 13px;"
         "  font-weight: 700;"
         "}"
         "QLabel#qualityReason {"
-        "  color: #4B5563;"
+        "  color: #45505A;"
         "  font-size: 16px;"
         "  line-height: 140%;"
         "}"
         "QFrame#metricCard_blue, QFrame#metricCard_green, QFrame#metricCard_red, QFrame#metricCard_purple, QFrame#metricCard {"
         "  background: #FFFFFF;"
-        "  border: 1px solid #DDE6F2;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 7px;"
         "}"
-        "QFrame#metricCard_blue { background: #EAF4FF; border: 1px solid #B9DCFF; }"
-        "QFrame#metricCard_green { background: #EDFFF3; border: 1px solid #BFE8C8; }"
-        "QFrame#metricCard_red { background: #FFF1F0; border: 1px solid #FFD1CD; }"
-        "QFrame#metricCard_purple { background: #F4F0FF; border: 1px solid #D8CCFF; }"
+        "QFrame#metricCard_blue { background: #EAF1EE; border: 1px solid #C8D8D0; }"
+        "QFrame#metricCard_green { background: #E7F3EA; border: 1px solid #B7D7C0; }"
+        "QFrame#metricCard_red { background: #FBEDEA; border: 1px solid #E8C7C2; }"
+        "QFrame#metricCard_purple { background: #F2EFE6; border: 1px solid #D9CFB8; }"
         "QLabel#metricName {"
-        "  color: #6B7280;"
+        "  color: #697468;"
         "  font-size: 14px;"
         "  font-weight: 700;"
         "}"
         "QLabel#metricValue {"
-        "  color: #111827;"
+        "  color: #26352A;"
         "  font-size: 22px;"
         "  font-weight: 700;"
         "}"
         "QWidget#chartCanvas {"
         "  background: #FFFFFF;"
-        "  border: 1px solid #DDE6F2;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 7px;"
         "}"
         "QScrollArea#panelScrollArea {"
@@ -2088,28 +2492,28 @@ void MainWindow::applyGlobalStyle()
         "  margin: 0;"
         "}"
         "QScrollBar::handle:vertical {"
-        "  background: #CBD5E1;"
+        "  background: #C8D8D0;"
         "  border-radius: 4px;"
         "}"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
         "  height: 0px;"
         "}"
         "QLabel#historyTitle {"
-        "  color: #111827;"
+        "  color: #26352A;"
         "  font-size: 34px;"
         "  font-weight: 700;"
         "}"
         "QLabel#historySummary {"
-        "  color: #4B5563;"
+        "  color: #45505A;"
         "  font-size: 18px;"
         "  font-weight: 600;"
         "}"
         "QTableWidget#historyTable {"
         "  background: #FFFFFF;"
-        "  alternate-background-color: #F4F8FF;"
-        "  border: 1px solid #DDE6F2;"
+        "  alternate-background-color: #F7F8F4;"
+        "  border: 1px solid #D8DED3;"
         "  border-radius: 8px;"
-        "  color: #111827;"
+        "  color: #1F2933;"
         "  font-size: 17px;"
         "  gridline-color: transparent;"
         "}"
@@ -2117,8 +2521,8 @@ void MainWindow::applyGlobalStyle()
         "  padding: 10px;"
         "}"
         "QHeaderView::section {"
-        "  background: #EAF4FF;"
-        "  color: #005BBB;"
+        "  background: #EAF1EE;"
+        "  color: #2D5C4A;"
         "  border: none;"
         "  padding: 10px;"
         "  font-size: 16px;"
@@ -2126,11 +2530,11 @@ void MainWindow::applyGlobalStyle()
         "}"
         "QSlider#speedSlider::groove:horizontal {"
         "  height: 6px;"
-        "  background: #E5E7EB;"
+        "  background: #D8DED3;"
         "  border-radius: 3px;"
         "}"
         "QSlider#speedSlider::sub-page:horizontal {"
-        "  background: #007AFF;"
+        "  background: #2F6B4F;"
         "  border-radius: 3px;"
         "}"
         "QSlider#speedSlider::handle:horizontal {"
@@ -2139,7 +2543,7 @@ void MainWindow::applyGlobalStyle()
         "  margin: -12px 0;"
         "  border-radius: 8px;"
         "  background: #ffffff;"
-        "  border: 1px solid #CBD5E1;"
+        "  border: 1px solid #C8D8D0;"
         "}"
     );
 }
@@ -2268,6 +2672,72 @@ void MainWindow::stopCameraProcess()
     m_cameraBuffer.clear();
     m_latestFrame = QPixmap();
     setVideoMessage("视频画面\n等待接入检测程序");
+}
+
+void MainWindow::startTuyaIotProcess()
+{
+    if (m_tuyaIotProcess->state() != QProcess::NotRunning) {
+        return;
+    }
+
+    if (isTuyaIotProcessRunning()) {
+        m_tuyaIotStartedByQt = false;
+        setIotStatusText("物联网运行中", "checking");
+        return;
+    }
+
+    const QFileInfo elfInfo(kTuyaIotElf);
+    if (!elfInfo.exists() || !elfInfo.isExecutable()) {
+        setIotStatusText("物联网程序缺失", "offline");
+        return;
+    }
+
+    m_tuyaIotProcess->setWorkingDirectory(kTuyaIotWorkDir);
+    m_tuyaIotProcess->start(kTuyaIotElf, QStringList());
+    if (m_tuyaIotProcess->waitForStarted(1200)) {
+        m_tuyaIotStartedByQt = true;
+        setIotStatusText("物联网启动中", "checking");
+    } else {
+        m_tuyaIotStartedByQt = false;
+        setIotStatusText("物联网启动失败", "offline");
+    }
+}
+
+void MainWindow::stopTuyaIotProcess()
+{
+    if (!m_tuyaIotStartedByQt || m_tuyaIotProcess->state() == QProcess::NotRunning) {
+        return;
+    }
+
+    m_tuyaIotProcess->terminate();
+    if (!m_tuyaIotProcess->waitForFinished(2000)) {
+        m_tuyaIotProcess->kill();
+        m_tuyaIotProcess->waitForFinished(1000);
+    }
+    m_tuyaIotStartedByQt = false;
+}
+
+bool MainWindow::isTuyaIotProcessRunning() const
+{
+    if (m_tuyaIotProcess->state() != QProcess::NotRunning) {
+        return true;
+    }
+
+    const int exitCode = QProcess::execute("pgrep", {"-f", kTuyaIotProcessPattern});
+    return exitCode == 0;
+}
+
+void MainWindow::setIotStatusText(const QString &text, const QString &state)
+{
+    if (!m_networkStatusLabel) {
+        return;
+    }
+
+    m_networkStatusLabel->setText(text);
+    m_networkStatusLabel->setProperty("state", state);
+    m_networkStatusLabel->style()->unpolish(m_networkStatusLabel);
+    m_networkStatusLabel->style()->polish(m_networkStatusLabel);
+    m_networkStatusLabel->update();
 }
 
 void MainWindow::processCameraBuffer()

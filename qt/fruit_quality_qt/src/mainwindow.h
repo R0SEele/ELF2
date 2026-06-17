@@ -21,6 +21,9 @@
 #include <QVector>
 #include <QWidget>
 
+class QNetworkAccessManager;
+class QNetworkReply;
+
 class VideoDisplayWidget : public QWidget
 {
 public:
@@ -88,6 +91,39 @@ private:
     QVector<QColor> m_colors;
 };
 
+class QualityScoreWidget : public QWidget
+{
+public:
+    explicit QualityScoreWidget(QWidget *parent = nullptr);
+
+    void setScore(double score, const QString &status, const QColor &color);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    double m_score;
+    QString m_status;
+    QColor m_color;
+};
+
+class QualityFactorWidget : public QWidget
+{
+public:
+    explicit QualityFactorWidget(QWidget *parent = nullptr);
+
+    void setData(const QStringList &labels, const QVector<double> &values, const QStringList &details, const QVector<QColor> &colors);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QStringList m_labels;
+    QVector<double> m_values;
+    QStringList m_details;
+    QVector<QColor> m_colors;
+};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -120,6 +156,9 @@ private slots:
     void readCameraFrames();
     void readCameraMessages();
     void handleCameraFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void updateIotStatus();
+    void readTuyaIotMessages();
+    void handleTuyaIotFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void updateConveyorSpeedLabel(int value);
     void applyConveyorSpeed();
     void startConveyorForward();
@@ -160,6 +199,10 @@ private:
     void stopMangoQualityProcess();
     void startCameraProcess();
     void stopCameraProcess();
+    void startTuyaIotProcess();
+    void stopTuyaIotProcess();
+    bool isTuyaIotProcessRunning() const;
+    void setIotStatusText(const QString &text, const QString &state);
     void processCameraBuffer();
     void showCameraFrame(const QByteArray &jpegData);
     void rescaleCameraFrame();
@@ -191,6 +234,11 @@ private:
     QProcess *m_mangoQualityProcess;
     QProcess *m_cameraProcess;
     QProcess *m_motorCommandProcess;
+    QProcess *m_tuyaIotProcess;
+    QTimer *m_iotStatusTimer;
+    QNetworkAccessManager *m_iotNetworkManager;
+    QNetworkReply *m_iotNetworkReply;
+    QLabel *m_networkStatusLabel;
     QByteArray m_cameraBuffer;
     QPixmap m_latestFrame;
     SensorDataReader m_sensorReader;
@@ -225,6 +273,8 @@ private:
     QLabel *m_mangoDataValueLabel;
     QLabel *m_mangoQualityStatusLabel;
     QLabel *m_mangoReasonLabel;
+    QualityScoreWidget *m_mangoScoreChart;
+    QualityFactorWidget *m_mangoFactorChart;
     QLabel *m_batchTotalValueLabel;
     QLabel *m_batchSaleableValueLabel;
     QLabel *m_batchRejectValueLabel;
@@ -252,6 +302,7 @@ private:
     bool m_ledAutoEnabled;
     bool m_ledWasStarted;
     bool m_conveyorWasStarted;
+    bool m_tuyaIotStartedByQt;
     bool m_shutdownDone;
 };
 

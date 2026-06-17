@@ -163,6 +163,7 @@ def parse_args():
     )
     parser.add_argument("--enter-line-ratio", type=float, default=0.20, help="Top-to-bottom tracking enter line")
     parser.add_argument("--count-line-ratio", type=float, default=0.75, help="Top-to-bottom counting line")
+    parser.add_argument("--show-count-lines", action="store_true", help="Draw debug enter/count lines on the video")
     parser.add_argument("--track-min-frames", type=int, default=4, help="Min stable frames before counting a mango")
     parser.add_argument("--track-max-missed", type=int, default=6, help="Frames to keep a temporarily lost mango ID")
     return parser.parse_args()
@@ -579,14 +580,15 @@ def write_object_result(csv_path, json_path, result):
         os.replace(str(temp_path), str(path))
 
 
-def draw_tracking_overlay(image, tracker, enter_line_ratio, count_line_ratio):
+def draw_tracking_overlay(image, tracker, enter_line_ratio, count_line_ratio, show_count_lines=False):
     height, width = image.shape[:2]
     enter_y = int(height * enter_line_ratio)
     count_y = int(height * count_line_ratio)
-    cv2.line(image, (0, enter_y), (width - 1, enter_y), (80, 180, 255), 2)
-    cv2.line(image, (0, count_y), (width - 1, count_y), (0, 220, 120), 2)
-    cv2.putText(image, "Detect zone", (12, max(24, enter_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 180, 255), 2)
-    cv2.putText(image, "Count line", (12, max(24, count_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 120), 2)
+    if show_count_lines:
+        cv2.line(image, (0, enter_y), (width - 1, enter_y), (80, 180, 255), 2)
+        cv2.line(image, (0, count_y), (width - 1, count_y), (0, 220, 120), 2)
+        cv2.putText(image, "Detect zone", (12, max(24, enter_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 180, 255), 2)
+        cv2.putText(image, "Count line", (12, max(24, count_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 120), 2)
 
     for track in tracker.active_tracks():
         feature = track.last_feature
@@ -671,7 +673,7 @@ def main():
 
             now = time.time()
             fps = frames / max(now - start_time, 1e-6)
-            draw_tracking_overlay(annotated, tracker, args.enter_line_ratio, args.count_line_ratio)
+            draw_tracking_overlay(annotated, tracker, args.enter_line_ratio, args.count_line_ratio, args.show_count_lines)
             cv2.putText(
                 annotated,
                 "FPS {:.1f}  DET {}  COUNT {}".format(fps, count, tracker.completed_count),
