@@ -1,0 +1,72 @@
+<view class="page">
+  <view class="topbar">
+    <view>
+      <view class="title">芒果检测数据</view>
+      <view class="subtitle">{{connected ? '云端同步' : '未连接'}} · {{lastUpdated}}</view>
+    </view>
+    <button class="refresh-button" bindtap="onRefreshTap">刷新</button>
+  </view>
+
+  <scroll-view class="content" scroll-y="true">
+    <view class="headline">
+      <view class="headline-main">
+        <view class="headline-label">芒果编号</view>
+        <view class="headline-value">{{headline.mangoId}}</view>
+      </view>
+      <view class="headline-main">
+        <view class="headline-label">品质等级</view>
+        <view class="headline-value accent">{{headline.grade}}</view>
+      </view>
+      <view class="headline-wide">
+        <view class="headline-label">建议通道</view>
+        <view class="headline-value">{{headline.channel}}</view>
+      </view>
+      <view class="headline-wide">
+        <view class="headline-label">综合结论</view>
+        <view class="headline-value">{{headline.conclusion}}</view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">成熟度</view>
+      <view class="metric-grid">
+        <view class="metric" wx:for="{{maturity}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">糖度与腐烂</view>
+      <view class="metric-grid">
+        <view class="metric" wx:for="{{sugar}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+        <view class="metric" wx:for="{{rot}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">视觉识别</view>
+      <view class="metric-grid">
+        <view class="metric" wx:for="{{vision}}" wx:key="code">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value">{{item.display}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">数据状态</view>
+      <view class="list-row" wx:for="{{data}}" wx:key="code">
+        <view class="list-label">{{item.label}}</view>
+        <view class="list-value">{{item.display}}</view>
+      </view>
+    </view>
+  </scroll-view>
+</view>

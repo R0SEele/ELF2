@@ -1,0 +1,9 @@
+timestamp,mango_id,position,quality_grade,suggested_channel,final_status,delay_s,result,message
+2026-06-17 12:28:29,1,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:28:36,6,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:28:41,9,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:29:00,14,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:30:22,20,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:30:25,25,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:30:35,27,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg
+2026-06-17 12:30:52,33,2,A级,销售通道,可接受,0.80,ok,position=2 angle=0.0deg

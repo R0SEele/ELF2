@@ -1,7 +1,8 @@
 {
-  "appid": "touristappid",
+  "appid": "wx12bf3c4c73e5b3f2",
   "projectname": "mango-quality-tuya",
   "miniprogramRoot": "./",
+  "cloudfunctionRoot": "cloudfunctions/",
   "setting": {
     "urlCheck": false,
     "es6": true,

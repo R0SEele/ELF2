@@ -1,9 +1,10 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/index/index",
+    "pages/quality/quality"
   ],
   "window": {
-    "navigationBarTitleText": "芒果智检分拣终端",
+    "navigationBarTitleText": "芒果质检助手",
     "navigationBarBackgroundColor": "#1f4f46",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#f5f7f6"

@@ -1,0 +1,2 @@
+timestamp,frame_index,mango_id,track_id,label,confidence,x1,y1,x2,y2,center_x,center_y,area_px,stable_frames,first_frame,last_frame,consistency_score,consistency_label,rgb_r_mean,rgb_g_mean,rgb_b_mean,hsv_h_mean_deg,hsv_s_mean_pct,hsv_v_mean_pct,green_ratio,yellow_orange_ratio,dark_spot_ratio,brown_area_ratio
+2026-06-17 12:30:51,14341,33,33,mango_ripe,0.8947,198,304,376,434,287,369,20121,31,14311,14341,1.0000,高,233.8397,173.6780,117.4431,91.6274,51.9674,91.7018,0.4274,0.7257,0.0000,0.0001

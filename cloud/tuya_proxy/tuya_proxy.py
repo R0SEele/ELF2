@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import hmac
 import json
 import os
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -21,6 +23,10 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "tuya_cloud.json"
 DEFAULT_SECRET_CONFIG = PROJECT_ROOT / "config" / "tuya_cloud_secrets.json"
+QUALITY_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_quality_realtime.json"
+SENSOR_CSV = PROJECT_ROOT / "datas" / "csv" / "sensor_realtime.csv"
+BATCH_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_batch_summary.json"
+CONTROL_STATE_JSON = PROJECT_ROOT / "datas" / "csv" / "tuya_proxy_control_state.json"
 
 
 DP_META: dict[str, dict[str, Any]] = {
@@ -48,6 +54,7 @@ DP_META: dict[str, dict[str, Any]] = {
         "type": "enum",
         "enum": {"none": "未检测", "unripe": "未熟", "ripe": "成熟", "overripe": "过熟", "unknown": "未知"},
     },
+    "maturity_score": {"label": "成熟度评分", "group": "quality", "type": "value", "scale": 1},
     "maturity_confidence": {"label": "成熟置信度", "group": "quality", "type": "value", "scale": 1, "unit": "%"},
     "sugar_label": {
         "label": "糖度判断",
@@ -68,6 +75,19 @@ DP_META: dict[str, dict[str, Any]] = {
     "yolo_confidence": {"label": "YOLO置信度", "group": "quality", "type": "value", "scale": 1, "unit": "%"},
     "data_status": {"label": "数据状态", "group": "quality", "type": "string"},
     "last_update": {"label": "更新时间", "group": "quality", "type": "string"},
+    "suggested_channel": {
+        "label": "建议通道",
+        "group": "quality",
+        "type": "enum",
+        "enum": {
+            "sales": "销售通道",
+            "ripen": "催熟通道",
+            "process": "加工通道",
+            "recheck": "复检通道",
+            "reject": "剔除通道",
+            "unknown": "未知",
+        },
+    },
     "batch_total": {"label": "批次总数", "group": "batch", "type": "value", "unit": "个"},
     "batch_a_count": {"label": "A级数量", "group": "batch", "type": "value", "unit": "个"},
     "batch_b_count": {"label": "B级数量", "group": "batch", "type": "value", "unit": "个"},
@@ -118,6 +138,17 @@ GROUP_LABELS = {
     "environment": "环境",
     "batch": "批次",
     "control": "控制",
+}
+
+DEFAULT_CONTROL_STATUS: dict[str, Any] = {
+    "device_status": "running",
+    "conveyor_cmd": "stop",
+    "conveyor_speed": "medium",
+    "sorter_position": "center",
+    "led_switch": False,
+    "led_brightness": 40,
+    "detect_cmd": "idle",
+    "auto_sort_enable": True,
 }
 
 
@@ -258,19 +289,47 @@ class TuyaOpenApi:
 
     def device_status(self) -> dict[str, Any]:
         errors = []
+        v2_path = f"/v2.0/cloud/thing/{self.device_id}/shadow/properties"
+        data = self.request("GET", v2_path)
+        if data.get("success"):
+            properties = (data.get("result") or {}).get("properties") or []
+            if properties:
+                return {
+                    "success": True,
+                    "result": [
+                        {"code": item.get("code"), "value": item.get("value")}
+                        for item in properties
+                        if item.get("code")
+                    ],
+                    "_source": "tuya_v2_shadow",
+                    "_raw": data,
+                }
+            errors.append({"path": v2_path, "response": data})
+        else:
+            errors.append({"path": v2_path, "response": data})
+
         for path in self._candidate_paths("/status"):
             data = self.request("GET", path)
             if data.get("success"):
+                data["_source"] = "tuya_v1_status"
                 return data
             errors.append({"path": path, "response": data})
         raise ProxyError("Failed to read Tuya device status", 502, errors)
 
     def send_commands(self, commands: list[dict[str, Any]]) -> dict[str, Any]:
+        v2_path = f"/v2.0/cloud/thing/{self.device_id}/shadow/properties/issue"
+        v2_body = {"properties": {command["code"]: command["value"] for command in commands}}
+        v2_data = self.request("POST", v2_path, body_obj=v2_body)
+        if v2_data.get("success"):
+            v2_data["_source"] = "tuya_v2_shadow"
+            return v2_data
+
         body = {"commands": commands}
-        errors = []
+        errors = [{"path": v2_path, "response": v2_data}]
         for path in self._candidate_paths("/commands"):
             data = self.request("POST", path, body_obj=body)
             if data.get("success"):
+                data["_source"] = "tuya_v1_commands"
                 return data
             errors.append({"path": path, "response": data})
         raise ProxyError("Failed to send Tuya commands", 502, errors)
@@ -340,6 +399,202 @@ def build_status_payload(device_id: str, tuya_response: dict[str, Any], source: 
     }
 
 
+def enum_code(value: Any, mapping: dict[str, str], fallback: str = "unknown") -> str:
+    text = str(value or "").strip()
+    if not text or text == "--":
+        return fallback
+    if text in mapping:
+        return mapping[text]
+    for needle, code in mapping.items():
+        if needle and needle in text:
+            return code
+    return fallback
+
+
+def scaled_number(value: Any, scale: int = 0, default: int = 0) -> int:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return int(number * (10 ** scale) + (0.5 if number >= 0 else -0.5))
+
+
+def read_control_state() -> dict[str, Any]:
+    status = dict(DEFAULT_CONTROL_STATUS)
+    saved = read_json_file(CONTROL_STATE_JSON)
+    for code in DEFAULT_CONTROL_STATUS:
+        if code in saved:
+            status[code] = saved[code]
+    return status
+
+
+def write_control_state(status: dict[str, Any]) -> None:
+    CONTROL_STATE_JSON.parent.mkdir(parents=True, exist_ok=True)
+    payload = {code: status.get(code, default) for code, default in DEFAULT_CONTROL_STATUS.items()}
+    tmp_path = CONTROL_STATE_JSON.with_suffix(".json.tmp")
+    with tmp_path.open("w", encoding="utf-8") as fp:
+        json.dump(payload, fp, ensure_ascii=False, indent=2)
+        fp.write("\n")
+    tmp_path.replace(CONTROL_STATE_JSON)
+
+
+def apply_control_commands(status: dict[str, Any], commands: list[dict[str, Any]]) -> dict[str, Any]:
+    next_status = dict(status)
+    for command in commands:
+        code = command["code"]
+        value = command["value"]
+        next_status[code] = value
+        if code == "led_brightness" and int(value) > 0:
+            next_status["led_switch"] = True
+        elif code == "led_switch" and value is False:
+            next_status["detect_cmd"] = next_status.get("detect_cmd", "idle")
+        elif code == "conveyor_cmd" and value == "stop":
+            next_status["device_status"] = "idle"
+        elif code == "conveyor_cmd" and value in {"forward", "reverse"}:
+            next_status["device_status"] = "running"
+        elif code == "detect_cmd" and value in {"stop", "idle"}:
+            next_status["detect_cmd"] = "idle" if value == "stop" else value
+    return next_status
+
+
+def read_local_status() -> dict[str, Any]:
+    status = read_control_state()
+
+    quality = read_json_file(QUALITY_JSON)
+    if quality:
+        status.update({
+            "mango_id": quality.get("mango_id") or "--",
+            "quality_grade": enum_code(quality.get("quality_grade"), {"A": "a", "B": "b", "C": "c", "剔除": "reject"}, "unknown"),
+            "maturity_label": enum_code(
+                quality.get("maturity_label"),
+                {"未检测": "none", "未熟": "unripe", "成熟": "ripe", "过熟": "overripe", "unknown": "unknown"},
+                "unknown",
+            ),
+            "maturity_score": scaled_number(quality.get("maturity_score"), 1),
+            "maturity_confidence": scaled_number(quality.get("maturity_confidence"), 1),
+            "sugar_label": enum_code(
+                quality.get("sugar_label"),
+                {"无法": "unable", "偏低": "low", "低": "low", "正常": "normal", "适中": "normal", "偏高": "high", "高": "high"},
+                "unknown",
+            ),
+            "sugar_score": scaled_number(quality.get("sugar_score"), 1),
+            "rot_status": enum_code(
+                quality.get("rot_status"),
+                {"无法": "unable", "正常": "normal", "无": "normal", "疑": "suspect", "腐": "rotten", "烂": "rotten"},
+                "unknown",
+            ),
+            "rot_score": scaled_number(quality.get("rot_score"), 1),
+            "final_status": quality.get("final_status") or "--",
+            "yolo_label": quality.get("yolo_label") or "--",
+            "yolo_confidence": scaled_number(quality.get("yolo_confidence"), 1),
+            "data_status": quality.get("data_status") or "--",
+            "last_update": quality.get("timestamp") or "--",
+            "suggested_channel": enum_code(
+                quality.get("suggested_channel"),
+                {
+                    "销售": "sales",
+                    "催熟": "ripen",
+                    "加工": "process",
+                    "复检": "recheck",
+                    "剔除": "reject",
+                    "unknown": "unknown",
+                    "未知": "unknown",
+                },
+                "unknown",
+            ),
+        })
+
+    if SENSOR_CSV.exists():
+        with SENSOR_CSV.open("r", encoding="utf-8", newline="") as fp:
+            rows = [row for row in csv.reader(fp) if row]
+        if rows:
+            row = rows[-1]
+            if row and row[0] == "temperature_c" and len(rows) > 1:
+                row = rows[-2]
+            if len(row) >= 7:
+                status.update({
+                    "temperature_c": scaled_number(row[0], 1),
+                    "humidity_rh": scaled_number(row[1], 1),
+                    "co2_ppm": scaled_number(row[2]),
+                    "light_lux": scaled_number(row[3]),
+                    "air_quality_ppm": scaled_number(row[4]),
+                    "env_status": enum_code(row[5], {"正常": "normal", "部分": "partial_error", "异常": "error"}, "unknown"),
+                    "last_update": row[6] or status.get("last_update", "--"),
+                })
+
+    batch = read_json_file(BATCH_JSON)
+    if batch:
+        status.update({
+            "batch_total": scaled_number(batch.get("total_count")),
+            "batch_a_count": scaled_number(batch.get("grade_a_count", batch.get("a_count"))),
+            "batch_b_count": scaled_number(batch.get("grade_b_count", batch.get("b_count"))),
+            "batch_reject_count": scaled_number(batch.get("reject_count")),
+        })
+
+    return status
+
+
+def build_local_status_payload(device_id: str, source: str = "local") -> dict[str, Any]:
+    return build_status_payload(
+        device_id,
+        {"success": True, "result": [{"code": code, "value": value} for code, value in read_local_status().items()]},
+        source,
+    )
+
+
+def conveyor_speed_ms(speed: Any) -> float:
+    if speed == "slow":
+        return 0.10
+    if speed == "fast":
+        return 0.16
+    return 0.13
+
+
+def run_local_command(command: dict[str, Any], control_state: dict[str, Any]) -> None:
+    code = command["code"]
+    value = command["value"]
+    if code == "conveyor_cmd":
+        speed = conveyor_speed_ms(control_state.get("conveyor_speed"))
+        subprocess.run(
+            ["python3", str(PROJECT_ROOT / "src/hardware/motor/conveyor_cli.py"), str(value), "--speed-ms", f"{speed:.2f}"],
+            check=True,
+            timeout=8,
+        )
+    elif code == "conveyor_speed" and control_state.get("conveyor_cmd") in {"forward", "reverse"}:
+        speed = conveyor_speed_ms(value)
+        subprocess.run(
+            [
+                "python3",
+                str(PROJECT_ROOT / "src/hardware/motor/conveyor_cli.py"),
+                str(control_state.get("conveyor_cmd")),
+                "--speed-ms",
+                f"{speed:.2f}",
+            ],
+            check=True,
+            timeout=8,
+        )
+    elif code == "sorter_position":
+        subprocess.run(
+            [
+                "python3",
+                str(PROJECT_ROOT / "src/hardware/servo/sorter.py"),
+                str(value),
+                "--config",
+                str(PROJECT_ROOT / "config/servo.yaml"),
+            ],
+            check=True,
+            timeout=8,
+        )
+    elif code in {"led_switch", "led_brightness"}:
+        led_on = bool(control_state.get("led_switch"))
+        if not led_on:
+            args = ["python3", str(PROJECT_ROOT / "src/hardware/led/ws2812b.py"), "off"]
+        else:
+            brightness = int(control_state.get("led_brightness") or 40)
+            args = ["python3", str(PROJECT_ROOT / "src/hardware/led/ws2812b.py"), "set", "--brightness", str(brightness)]
+        subprocess.run(args, check=True, timeout=8)
+
+
 def validate_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
     clean_commands = []
     for command in commands:
@@ -379,6 +634,7 @@ def mock_tuya_response() -> dict[str, Any]:
             {"code": "mango_id", "value": "M-0001"},
             {"code": "quality_grade", "value": "a"},
             {"code": "maturity_label", "value": "ripe"},
+            {"code": "maturity_score", "value": 886},
             {"code": "maturity_confidence", "value": 924},
             {"code": "sugar_label", "value": "normal"},
             {"code": "sugar_score", "value": 842},
@@ -389,6 +645,7 @@ def mock_tuya_response() -> dict[str, Any]:
             {"code": "yolo_confidence", "value": 938},
             {"code": "data_status", "value": "vision_ok,spectrum_ok"},
             {"code": "last_update", "value": time.strftime("%Y-%m-%d %H:%M:%S")},
+            {"code": "suggested_channel", "value": "sales"},
             {"code": "batch_total", "value": 18},
             {"code": "batch_a_count", "value": 9},
             {"code": "batch_b_count", "value": 6},
@@ -444,6 +701,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 response = mock_tuya_response() if self.state.mock else self.state.api.device_status()
                 payload = build_status_payload(str(self.state.config.get("device_id")), response,
                                                "mock" if self.state.mock else "tuya")
+                if not self.state.mock and not payload["items"]:
+                    payload = build_local_status_payload(str(self.state.config.get("device_id")), "local_fallback")
                 self.send_json(payload)
             else:
                 raise ProxyError("Not found", 404)
@@ -453,6 +712,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_error_json(ProxyError(str(exc), 500))
 
     def do_POST(self) -> None:
+        path = ""
+        commands: list[dict[str, Any]] = []
         try:
             path = urllib.parse.urlparse(self.path).path
             body = self.read_body_json()
@@ -466,11 +727,35 @@ class ProxyHandler(BaseHTTPRequestHandler):
             response = {"success": True, "result": True} if self.state.mock else self.state.api.send_commands(commands)
             if not response.get("success"):
                 raise ProxyError("Tuya rejected command", 502, response)
+            control_state = apply_control_commands(read_control_state(), commands)
+            write_control_state(control_state)
             self.send_json({"ok": True, "commands": commands, "tuya": response})
         except ProxyError as exc:
-            self.send_error_json(exc)
+            if path in {"/api/device/command", "/api/device/commands"} and self.can_use_local_fallback(exc):
+                previous_state = read_control_state()
+                control_state = apply_control_commands(previous_state, commands)
+                try:
+                    for command in commands:
+                        run_local_command(command, control_state)
+                    write_control_state(control_state)
+                    self.send_json({
+                        "ok": True,
+                        "commands": commands,
+                        "source": "local_fallback",
+                        "status": control_state,
+                        "tuya_error": exc.detail,
+                    })
+                except Exception as local_exc:
+                    write_control_state(previous_state)
+                    self.send_error_json(ProxyError(f"Local command failed: {local_exc}", 500, exc.detail))
+            else:
+                self.send_error_json(exc)
         except Exception as exc:
             self.send_error_json(ProxyError(str(exc), 500))
+
+    def can_use_local_fallback(self, exc: ProxyError) -> bool:
+        text = json.dumps(exc.detail, ensure_ascii=False) if exc.detail is not None else str(exc)
+        return "command or value not support" in text or '"code": 2008' in text or "'code': 2008" in text
 
     def read_body_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0") or 0)

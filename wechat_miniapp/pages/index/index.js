@@ -31,19 +31,29 @@ function itemMap(items) {
   return map;
 }
 
+function pickDisplay(map, code, fallback = "--") {
+  return map[code] ? map[code].display : fallback;
+}
+
 Page({
   data: {
-    apiBaseInput: "",
+    endpointInput: "",
+    accessTokenInput: "",
     connected: false,
     loading: false,
     lastUpdated: "--",
     deviceStatus: "未知",
-    quality: [],
+    cloudMode: true,
+    overview: {
+      grade: "--",
+      channel: "--",
+      conclusion: "--",
+      mangoId: "--"
+    },
     environment: [],
     batch: [],
     control: [],
     device: [],
-    status: {},
     ledOn: false,
     ledBrightness: 40,
     autoSort: true,
@@ -57,9 +67,21 @@ Page({
   },
 
   onLoad() {
-    this.setData({ apiBaseInput: app.globalData.apiBase });
+    this.setData({
+      endpointInput: app.globalData.apiBase,
+      accessTokenInput: app.globalData.accessToken,
+      cloudMode: app.globalData.useCloud
+    });
     this.refreshStatus();
     this.timer = setInterval(() => this.refreshStatus(), 3000);
+  },
+
+  onShow() {
+    this.setData({
+      endpointInput: app.globalData.apiBase,
+      accessTokenInput: app.globalData.accessToken,
+      cloudMode: app.globalData.useCloud
+    });
   },
 
   onUnload() {
@@ -68,45 +90,32 @@ Page({
     }
   },
 
-  request(path, options = {}) {
-    const base = (app.globalData.apiBase || "").replace(/\/$/, "");
-    return new Promise((resolve, reject) => {
-      wx.request({
-        url: base + path,
-        method: options.method || "GET",
-        data: options.data || {},
-        timeout: 8000,
-        success: (res) => {
-          if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.ok !== false) {
-            resolve(res.data);
-          } else {
-            reject(res.data || { error: "request failed" });
-          }
-        },
-        fail: reject
-      });
-    });
-  },
-
   refreshStatus() {
     if (this.data.loading) {
       return;
     }
     this.setData({ loading: true });
-    this.request("/api/device/status")
+    app.requestDeviceStatus()
       .then((data) => {
+        const quality = itemMap(data.groups.quality);
         const control = itemMap(data.groups.control);
         const device = itemMap(data.groups.device);
         const conveyorValue = control.conveyor_cmd ? control.conveyor_cmd.raw_value : "stop";
         const speedValue = control.conveyor_speed ? control.conveyor_speed.raw_value : "medium";
         const sorterValue = control.sorter_position ? control.sorter_position.raw_value : "center";
+
         this.setData({
           connected: true,
           loading: false,
-          status: data.status || {},
+          cloudMode: data.source === "tuya",
           deviceStatus: device.device_status ? device.device_status.display : "在线",
           lastUpdated: this.formatTime(data.updated_at),
-          quality: data.groups.quality || [],
+          overview: {
+            grade: pickDisplay(quality, "quality_grade"),
+            channel: pickDisplay(quality, "suggested_channel"),
+            conclusion: pickDisplay(quality, "final_status"),
+            mangoId: pickDisplay(quality, "mango_id")
+          },
           environment: data.groups.environment || [],
           batch: data.groups.batch || [],
           control: data.groups.control || [],
@@ -119,16 +128,16 @@ Page({
           sorterIndex: this.indexFor("sorter_position", sorterValue)
         });
       })
-      .catch(() => {
+      .catch((err) => {
         this.setData({ connected: false, loading: false, deviceStatus: "未连接" });
+        if (err && err.error) {
+          wx.showToast({ title: err.error, icon: "none" });
+        }
       });
   },
 
   sendCommand(code, value) {
-    this.request("/api/device/command", {
-      method: "POST",
-      data: { code, value }
-    })
+    app.sendDeviceCommand(code, value)
       .then(() => {
         this.refreshStatus();
       })
@@ -140,18 +149,36 @@ Page({
       });
   },
 
-  onApiBaseInput(event) {
-    this.setData({ apiBaseInput: event.detail.value });
+  onEndpointInput(event) {
+    this.setData({ endpointInput: event.detail.value });
   },
 
-  saveApiBase() {
-    const value = this.data.apiBaseInput.trim();
-    if (!value) {
+  onAccessTokenInput(event) {
+    this.setData({ accessTokenInput: event.detail.value });
+  },
+
+  saveConnection() {
+    const endpoint = this.data.endpointInput.trim();
+    if (!endpoint) {
       return;
     }
-    app.globalData.apiBase = value;
-    wx.setStorageSync("apiBase", value);
+    if (!app.configureEndpoint(endpoint)) {
+      wx.showToast({ title: "云环境无效", icon: "none" });
+      return;
+    }
+    app.setAccessToken(this.data.accessTokenInput);
+    this.setData({
+      endpointInput: app.globalData.apiBase,
+      accessTokenInput: app.globalData.accessToken,
+      cloudMode: app.globalData.useCloud
+    });
     this.refreshStatus();
+  },
+
+  openQualityPage() {
+    wx.navigateTo({
+      url: "/pages/quality/quality"
+    });
   },
 
   onLedSwitch(event) {

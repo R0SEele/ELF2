@@ -1,5 +1,5 @@
 <view class="page">
-  <view class="header">
+  <view class="topbar">
     <view>
       <view class="title">芒果智检分拣终端</view>
       <view class="subtitle">设备 {{deviceStatus}} · {{lastUpdated}}</view>
@@ -7,24 +7,37 @@
     <view class="status {{connected ? 'online' : 'offline'}}">{{connected ? '在线' : '离线'}}</view>
   </view>
 
-  <view class="api-row">
-    <input class="api-input" value="{{apiBaseInput}}" bindinput="onApiBaseInput" />
-    <button class="api-button" bindtap="saveApiBase">连接</button>
-  </view>
-
   <scroll-view class="content" scroll-y="true">
-    <view class="section">
-      <view class="section-title">当前芒果</view>
-      <view class="metric-grid">
-        <view class="metric" wx:for="{{quality}}" wx:key="code">
-          <view class="metric-label">{{item.label}}</view>
-          <view class="metric-value">{{item.display}}</view>
-        </view>
+    <view class="connection-panel">
+      <view class="mode-line">
+        <view class="mode-badge">{{cloudMode ? '云端' : '本地'}}</view>
+        <view class="mode-text">{{cloudMode ? '微信云函数 · 涂鸦云影子' : '开发板本地代理'}}</view>
       </view>
+      <view class="input-row">
+        <input class="text-input" value="{{endpointInput}}" bindinput="onEndpointInput" />
+        <button class="connect-button" bindtap="saveConnection">连接</button>
+      </view>
+      <input class="token-input" password="true" placeholder="访问口令（可选）" value="{{accessTokenInput}}" bindinput="onAccessTokenInput" />
+    </view>
+
+    <view class="summary-band">
+      <view class="summary-item">
+        <view class="summary-label">当前等级</view>
+        <view class="summary-value accent">{{overview.grade}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">建议通道</view>
+        <view class="summary-value">{{overview.channel}}</view>
+      </view>
+      <view class="summary-item wide">
+        <view class="summary-label">综合结论</view>
+        <view class="summary-value">{{overview.conclusion}}</view>
+      </view>
+      <view class="summary-action" bindtap="openQualityPage">查看检测数据</view>
     </view>
 
     <view class="section">
-      <view class="section-title">环境</view>
+      <view class="section-title">环境监测</view>
       <view class="metric-grid">
         <view class="metric" wx:for="{{environment}}" wx:key="code">
           <view class="metric-label">{{item.label}}</view>
@@ -34,8 +47,8 @@
     </view>
 
     <view class="section">
-      <view class="section-title">批次</view>
-      <view class="metric-grid compact">
+      <view class="section-title">批次统计</view>
+      <view class="batch-grid">
         <view class="metric" wx:for="{{batch}}" wx:key="code">
           <view class="metric-label">{{item.label}}</view>
           <view class="metric-value">{{item.display}}</view>
@@ -44,7 +57,7 @@
     </view>
 
     <view class="section">
-      <view class="section-title">控制</view>
+      <view class="section-title">设备控制</view>
 
       <view class="control-row">
         <view class="control-label">传送带</view>
