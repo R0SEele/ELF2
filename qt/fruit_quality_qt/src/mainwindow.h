@@ -145,6 +145,7 @@ private slots:
     void showServoControlPage();
     void showBatchStatsPage();
     void showMangoHistoryPage();
+    void showVoicePromptPage();
     void refreshSensorData();
     void refreshMangoQualityData();
     void refreshBatchStatsData();
@@ -153,6 +154,10 @@ private slots:
     void handleSensorFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void readMangoQualityMessages();
     void handleMangoQualityFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void announcePreviousMango();
+    void announceBatchMango();
+    void readVoicePromptMessages();
+    void handleVoicePromptFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void readCameraFrames();
     void readCameraMessages();
     void handleCameraFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -187,6 +192,7 @@ private:
     QWidget *createMangoQualityPage();
     QWidget *createServoControlPage();
     QWidget *createBatchStatsPage();
+    QWidget *createVoicePromptPage();
     QLabel *makeSensorNameLabel(const QString &text);
     QLabel *makeSensorValueLabel();
     QFrame *makeMetricCard(const QString &name, QLabel **valueLabel, const QString &accentName = QString());
@@ -218,6 +224,7 @@ private:
     int readLatestLightLux() const;
     void runLedCommand(int brightnessPct);
     void runServoCommand(const QString &position, const QString &label);
+    void runVoicePromptCommand(const QString &target, const QString &label);
 
     QStackedWidget *m_pages;
     QStackedWidget *m_functionPages;
@@ -232,6 +239,7 @@ private:
     QProcess *m_sensorProcess;
     QTimer *m_mangoQualityTimer;
     QProcess *m_mangoQualityProcess;
+    QProcess *m_voicePromptProcess;
     QProcess *m_cameraProcess;
     QProcess *m_motorCommandProcess;
     QProcess *m_tuyaIotProcess;
@@ -286,6 +294,9 @@ private:
     BarChartWidget *m_batchChannelChart;
     QTableWidget *m_historyTable;
     QLabel *m_historySummaryLabel;
+    QLabel *m_voicePromptStatusLabel;
+    QPushButton *m_voicePreviousButton;
+    QPushButton *m_voiceBatchButton;
     QLabel *m_servoStatusLabel;
     QPushButton *m_servoPosition1Button;
     QPushButton *m_servoPosition2Button;

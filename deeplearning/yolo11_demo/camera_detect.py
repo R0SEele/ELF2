@@ -32,6 +32,8 @@ DEFAULTS = {
     "input_format": "nhwc",
     "objectness": False,
     "sigmoid": False,
+    "max_det": 100,
+    "pre_nms_topk": 1000,
     "width": 0,
     "height": 0,
     "fps": 0,
@@ -88,6 +90,13 @@ def parse_args():
     parser.add_argument("--conf", type=float, default=config["conf"], help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=config["iou"], help="NMS IoU threshold")
     parser.add_argument("--workers", type=int, default=config["workers"], help="RKNN worker count")
+    parser.add_argument("--max-det", type=int, default=config["max_det"], help="Maximum detections kept after NMS")
+    parser.add_argument(
+        "--pre-nms-topk",
+        type=int,
+        default=config["pre_nms_topk"],
+        help="Maximum high-confidence boxes kept before NMS, 0 disables the cap",
+    )
     parser.add_argument(
         "--input-format",
         choices=("nhwc", "nchw"),
@@ -625,6 +634,8 @@ def main():
         input_format=args.input_format,
         has_objectness=args.objectness,
         apply_sigmoid=args.sigmoid,
+        max_det=args.max_det,
+        pre_nms_topk=args.pre_nms_topk,
     )
 
     cap = None

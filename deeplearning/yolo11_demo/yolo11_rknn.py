@@ -125,6 +125,16 @@ def nms(boxes, scores, iou_threshold):
     return keep
 
 
+def limit_pre_nms(boxes, scores, class_ids, pre_nms_topk):
+    if pre_nms_topk <= 0 or scores.size <= pre_nms_topk:
+        return boxes, scores, class_ids
+
+    topk = int(pre_nms_topk)
+    indices = np.argpartition(scores, -topk)[-topk:]
+    indices = indices[np.argsort(scores[indices])[::-1]]
+    return boxes[indices], scores[indices], class_ids[indices]
+
+
 def dfl(position):
     n, c, h, w = position.shape
     p_num = 4
@@ -185,6 +195,7 @@ def postprocess_split_yolo(
     labels=None,
     img_size=DEFAULT_IMG_SIZE,
     max_det=300,
+    pre_nms_topk=1000,
 ):
     if len(outputs) % 3 != 0:
         raise ValueError("split YOLO output count must be multiple of 3, got {}".format(len(outputs)))
@@ -212,6 +223,7 @@ def postprocess_split_yolo(
     boxes = boxes[keep]
     scores = scores[keep]
     class_ids = class_ids[keep]
+    boxes, scores, class_ids = limit_pre_nms(boxes, scores, class_ids, pre_nms_topk)
 
     if image_shape is not None:
         boxes = scale_boxes(boxes, ratio, padding, image_shape)
@@ -251,6 +263,7 @@ def postprocess_yolo11(
     has_objectness=False,
     apply_sigmoid=False,
     max_det=300,
+    pre_nms_topk=1000,
 ):
     pred = normalize_yolo_output(output)
     if pred.shape[1] < 5:
@@ -282,6 +295,7 @@ def postprocess_yolo11(
     scores = scores[keep]
     class_ids = class_ids[keep]
     class_count = class_scores.shape[1]
+    boxes, scores, class_ids = limit_pre_nms(boxes, scores, class_ids, pre_nms_topk)
 
     if image_shape is not None:
         boxes = scale_boxes(boxes, ratio, padding, image_shape)
@@ -322,6 +336,7 @@ def postprocess_auto(
     apply_sigmoid=False,
     img_size=DEFAULT_IMG_SIZE,
     max_det=300,
+    pre_nms_topk=1000,
 ):
     if len(outputs) == 1:
         return postprocess_yolo11(
@@ -335,6 +350,7 @@ def postprocess_auto(
             has_objectness=has_objectness,
             apply_sigmoid=apply_sigmoid,
             max_det=max_det,
+            pre_nms_topk=pre_nms_topk,
         )
 
     return postprocess_split_yolo(
@@ -347,6 +363,7 @@ def postprocess_auto(
         labels=labels,
         img_size=img_size,
         max_det=max_det,
+        pre_nms_topk=pre_nms_topk,
     )
 
 
@@ -465,6 +482,7 @@ class YOLO11RKNNDetector:
         has_objectness=False,
         apply_sigmoid=False,
         max_det=300,
+        pre_nms_topk=1000,
     ):
         self.img_size = img_size
         self.conf_threshold = conf_threshold
@@ -474,6 +492,7 @@ class YOLO11RKNNDetector:
         self.has_objectness = has_objectness
         self.apply_sigmoid = apply_sigmoid
         self.max_det = max_det
+        self.pre_nms_topk = max(0, int(pre_nms_topk))
 
         if self.input_format not in ("nhwc", "nchw"):
             raise ValueError("input_format must be nhwc or nchw")
@@ -485,7 +504,7 @@ class YOLO11RKNNDetector:
             tensor = np.expand_dims(rgb.transpose(2, 0, 1), axis=0)
         else:
             tensor = np.expand_dims(rgb, axis=0)
-        return tensor, ratio, padding
+        return np.ascontiguousarray(tensor), ratio, padding
 
     def infer(self, rknn, frame):
         tensor, ratio, padding = self.preprocess(frame)
@@ -502,6 +521,7 @@ class YOLO11RKNNDetector:
             apply_sigmoid=self.apply_sigmoid,
             img_size=self.img_size,
             max_det=self.max_det,
+            pre_nms_topk=self.pre_nms_topk,
         )
 
         if self.labels is None:

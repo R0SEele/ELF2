@@ -13,6 +13,10 @@ yolo11:
   iou: 0.45
   # Number of RKNNLite worker instances. / RKNNLite 推理实例数量。
   workers: 3
+  # Maximum detections kept after NMS. / NMS 后最多保留的目标数。
+  max_det: 100
+  # Maximum high-confidence boxes kept before NMS; 0 disables this cap. / NMS 前最多保留的高置信候选框数；0 表示不限制。
+  pre_nms_topk: 1000
   # Input tensor layout sent to RKNNLite: nhwc or nchw. / 传给 RKNNLite 的输入张量布局：nhwc 或 nchw。
   input_format: nhwc
   # Whether output includes an objectness channel. / 输出是否包含 objectness 通道。

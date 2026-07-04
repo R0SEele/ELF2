@@ -69,6 +69,7 @@ HEADERS += src/mainwindow.h src/sensordatareader.h
 | 3 | 芒果质检（单果） | `showMangoQualityPage()` |
 | 4 | 批次统计 | `showBatchStatsPage()` |
 | 5 | 舵机分拣控制 | `showServoControlPage()` |
+| 6 | 语音评价 | `showVoicePromptPage()` |
 
 样式由 `applyGlobalStyle()`（约 2119–2550 行 QSS）统一，用 `objectName` + `property("state")` 选择器（网络状态标签 `state=online/offline/checking/warning` 切配色，`unpolish()/polish()` 刷新）。
 
@@ -78,6 +79,7 @@ HEADERS += src/mainwindow.h src/sensordatareader.h
 - `kSensorCsvScript = src/hardware/sensors/csv_logger.py`
 - `kCameraScript = deeplearning/yolo11_demo/camera_detect.py`
 - `kMangoQualityScript = src/software/mango_quality/mango_quality_cli.py`
+- `kVoiceAssistantScript = src/software/voice_assistant/voice_assistant.py`
 - `kMotorCommandScript = src/hardware/motor/conveyor_cli.py`
 - `kLedCommandScript = src/hardware/led/ws2812b.py`
 - `kServoCommandScript = src/hardware/servo/sorter.py`
@@ -110,14 +112,15 @@ HEADERS += src/mainwindow.h src/sensordatareader.h
 - `m_iotStatusTimer`（5000ms）→ `updateIotStatus()`；构造时即启动涂鸦固件 + 探测
 - `m_ledAutoTimer`（5000ms）→ `updateLedAutoControl()`（仅自动调光开启时 start）
 
-`QProcess` 信号：`m_sensorProcess`(stderr→readSensorMessages, finished→handleSensorFinished)、`m_mangoQualityProcess`、`m_cameraProcess`(stdout→readCameraFrames 二进制帧流)、`m_tuyaIotProcess`(MergedChannels，读丢弃防阻塞)、`m_motorCommandProcess`（命令级临时 connect/disconnect）。`finished` 用 `static_cast` 消歧重载。
+`QProcess` 信号：`m_sensorProcess`(stderr→readSensorMessages, finished→handleSensorFinished)、`m_mangoQualityProcess`、`m_voicePromptProcess`(MergedChannels，stdout/stderr→readVoicePromptMessages, finished→handleVoicePromptFinished)、`m_cameraProcess`(stdout→readCameraFrames 二进制帧流)、`m_tuyaIotProcess`(MergedChannels，读丢弃防阻塞)、`m_motorCommandProcess`（命令级临时 connect/disconnect）。`finished` 用 `static_cast` 消歧重载。
 
 ### 页面切换驱动的进程生命周期
 
 - `showWorkPage()`：`startSensorProcess()`+刷新+启定时器；`startCameraProcess()`；`startMangoQualityProcess()`+刷新+启定时器。
 - `showStartPage()`：`shutdownHardware()`+停定时器+切索引 0。
 - `showMangoQualityPage()`/`showBatchStatsPage()`/`showMangoHistoryPage()`：切子页并刷新。
-- `shutdownHardware()`（幂等，`m_shutdownDone` 守卫）：停 LED 自动、必要时关灯、停传送带、停三模态、停传感、停摄像头、kill 电机命令进程。析构额外 `stopTuyaIotProcess()`。
+- `showVoicePromptPage()`：切到语音评价子页；两个按钮分别触发 `voice_assistant.py --once --target previous --speak-invalid --backend <后端> --edge-voice <声音> --tts-timeout <秒> --alsa-device <设备> --timeout 5` 和 `--target batch`。后端优先取 `VOICE_BACKEND`，未设置时为 `edge-tts`；TTS 超时优先取 `VOICE_TTS_TIMEOUT`，默认 12 秒；设备优先取 `VOICE_ALSA_DEVICE`，未设置时默认 `plughw:2,0`。如需网络失败时也能出声，可设 `VOICE_BACKEND=auto`。
+- `shutdownHardware()`（幂等，`m_shutdownDone` 守卫）：停 LED 自动、必要时关灯、停传送带、停三模态、停语音评价进程、停传感、停摄像头、kill 电机命令进程。析构额外 `stopTuyaIotProcess()`。
 
 ### 环境传感数据读取（`SensorDataReader`）
 
@@ -154,6 +157,14 @@ class SensorDataReader { SensorSnapshot readLatest() const; ... };
 ### 历史记录读取（`refreshMangoHistoryData`）
 
 读 `mango_quality_history.csv` 全部行，**倒序**填 `m_historyTable`，列键 `{mango_id,timestamp,quality_grade,maturity_label,reference_brix_range,rot_status,suggested_channel,final_status}`，`mango_id` 前加 `#`。底部“已检测 N 个芒果”。
+
+### 语音评价（`runVoicePromptCommand`）
+
+功能主页新增“语音评价”入口，子页内两个功能键：
+- `评价上一个芒果` → `announcePreviousMango()` → `voice_assistant.py --once --target previous --speak-invalid --backend <后端> --edge-voice <声音> --tts-timeout <秒> --alsa-device <设备> --timeout 5`，读取 `mango_quality_history.csv` 最后一条历史单果。
+- `评价整批芒果` → `announceBatchMango()` → `voice_assistant.py --once --target batch --speak-invalid --backend <后端> --edge-voice <声音> --tts-timeout <秒> --alsa-device <设备> --timeout 5`，读取 `mango_batch_summary.csv` 最后一条批次统计。
+
+语音脚本由 `m_voicePromptProcess` 异步运行；运行期间禁用两个语音按钮，结束后恢复并用 `m_voicePromptStatusLabel` 显示完成或失败状态。
 
 ### 视频帧协议
 

@@ -80,7 +80,7 @@ AS7341 光谱(collect.py/color.py) → spectrum_quality_samples.csv
    │  → mango_batch_summary.csv/.json（批次统计）
    │
    ├──► 自动分拣(auto_sorter → sorter.py) → 舵机PWM → mango_sorter_events.csv
-   ├──► 语音助手(voice_assistant.py) → DeepSeek 生成播报 → espeak-ng/spd-say
+   ├──► 语音助手(voice_assistant.py) → DeepSeek/本地模板生成播报 → edge-tts/espeak-ng/spd-say
    ├──► Qt 上位机（轮询 CSV 渲染图表卡片）
    └──► 涂鸦云（tuya_proxy / TuyaOpen 固件按 DP 上报）→ 微信小程序
 
@@ -100,7 +100,7 @@ AS7341 光谱(collect.py/color.py) → spectrum_quality_samples.csv
 | `deeplearning/yolo11_demo/` | 生产 YOLO11 推理 | camera_detect.py、yolo11_rknn.py、rknn_pool.py |
 | `deeplearning/demo/` | YOLOv8 帧率参考 demo | main_camera_fps_v8.py |
 | `deeplearning/*.rknn` | RK3588 INT8 量化模型 | mango_yolo11_rk3588_i8.rknn 等 |
-| `deeplearning/rknn-toolkit-lite2/` | 板端推理运行时 v2.3.2 | RKNNLite wheel 包 |
+| `deeplearning/rknn-toolkit-lite2/` | 板端推理运行时 v2.3.2 | RKNNLite aarch64 wheel 包 |
 | `qt/fruit_quality_qt/` | Qt 上位机 HMI | mainwindow.cpp（~3400 行）、sensordatareader |
 | `cloud/tuya_proxy/` | 云端 HTTP 代理 | tuya_proxy.py（OpenAPI 签名网关） |
 | `iot/TuyaOpen/` | 涂鸦开源 IoT SDK（子模块，~22000 文件） | apps/tuya_cloud/fruit_quality_cloud 固件 |
@@ -121,7 +121,7 @@ AS7341 光谱(collect.py/color.py) → spectrum_quality_samples.csv
 | 融合算法 | 规则专家系统（加权评分），无需训练集 |
 | 硬件接口 | I2C（原生 ioctl）、SPI（WS2812B 位模拟）、UART（步进电机）、PWM sysfs（舵机）、IIO/SARADC（MQ-135） |
 | 上位机 | Qt5 Widgets + QPainter 自绘图表、QProcess、C++14、qmake |
-| 语音 | DeepSeek Chat API（urllib）、espeak-ng / speech-dispatcher（ALSA/HDMI） |
+| 语音 | DeepSeek Chat API（urllib）、edge-tts 神经网络语音，回退 espeak-ng / speech-dispatcher（ALSA/HDMI） |
 | 云端 | 涂鸦 OpenAPI（HMAC-SHA256 v2 签名）、TuyaOpen C SDK（MQTT）、微信云开发云函数 |
 | 前端 | 微信小程序（WXML/WXSS/JS）、云函数 Node.js（crypto/https） |
 | 数据 | CSV/JSON 原子写（.tmp + os.replace）、集中式 YAML 配置 |
@@ -168,5 +168,5 @@ iot/TuyaOpen/apps/tuya_cloud/fruit_quality_cloud/dist/.../fruit_quality_cloud_0.
 2. **多源鲁棒**：任一信号缺失时融合仍可运行（YOLO 权重随置信度收缩，缺失项被加权平均自动跳过）。
 3. **腐烂优先**：分级/通道逻辑中腐烂状态优先级最高，可直接触发剔除/复检。
 4. **凭据隔离**：涂鸦 `client_secret`、固件 UUID/AUTHKEY 均存于被 git 忽略的 secrets 文件。
-5. **代码空缺**：`src/hardware/camera/cam.py` 当前为空文件，实际相机采集由 `deeplearning/yolo11_demo/camera_detect.py` 承担。
+5. **相机入口**：原 `src/hardware/camera/cam.py` 空占位已移除，实际相机采集由 `deeplearning/yolo11_demo/camera_detect.py` 承担。
 6. **conf 阈值双值**：YOLO 代码默认 `conf=0.25`，但生产 `yolo11.yaml` 使用 `conf=0.7`，运行时以 YAML/命令行为准。

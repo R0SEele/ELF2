@@ -33,6 +33,10 @@ const char *kSensorCsvDirectory = "/home/elf/projects/datas/csv";
 const char *kSensorCsvScript = "/home/elf/projects/src/hardware/sensors/csv_logger.py";
 const char *kCameraScript = "/home/elf/projects/deeplearning/yolo11_demo/camera_detect.py";
 const char *kMangoQualityScript = "/home/elf/projects/src/software/mango_quality/mango_quality_cli.py";
+const char *kVoiceAssistantScript = "/home/elf/projects/src/software/voice_assistant/voice_assistant.py";
+const char *kDefaultVoiceBackend = "edge-tts";
+const char *kDefaultVoiceEdgeVoice = "zh-CN-XiaoxiaoNeural";
+const char *kDefaultVoiceAlsaDevice = "plughw:2,0";
 const char *kMotorCommandScript = "/home/elf/projects/src/hardware/motor/conveyor_cli.py";
 const char *kLedCommandScript = "/home/elf/projects/src/hardware/led/ws2812b.py";
 const char *kServoCommandScript = "/home/elf/projects/src/hardware/servo/sorter.py";
@@ -532,6 +536,7 @@ MainWindow::MainWindow(QWidget *parent)
       m_sensorProcess(new QProcess(this)),
       m_mangoQualityTimer(new QTimer(this)),
       m_mangoQualityProcess(new QProcess(this)),
+      m_voicePromptProcess(new QProcess(this)),
       m_cameraProcess(new QProcess(this)),
       m_motorCommandProcess(new QProcess(this)),
       m_tuyaIotProcess(new QProcess(this)),
@@ -584,6 +589,9 @@ MainWindow::MainWindow(QWidget *parent)
       m_batchChannelChart(nullptr),
       m_historyTable(nullptr),
       m_historySummaryLabel(nullptr),
+      m_voicePromptStatusLabel(nullptr),
+      m_voicePreviousButton(nullptr),
+      m_voiceBatchButton(nullptr),
       m_servoStatusLabel(nullptr),
       m_servoPosition1Button(nullptr),
       m_servoPosition2Button(nullptr),
@@ -632,6 +640,14 @@ MainWindow::MainWindow(QWidget *parent)
             this,
             &MainWindow::handleMangoQualityFinished);
 
+    m_voicePromptProcess->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_voicePromptProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::readVoicePromptMessages);
+    connect(m_voicePromptProcess, &QProcess::readyReadStandardError, this, &MainWindow::readVoicePromptMessages);
+    connect(m_voicePromptProcess,
+            static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+            this,
+            &MainWindow::handleVoicePromptFinished);
+
     connect(m_cameraProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::readCameraFrames);
     connect(m_cameraProcess, &QProcess::readyReadStandardError, this, &MainWindow::readCameraMessages);
     connect(m_cameraProcess,
@@ -676,6 +692,13 @@ void MainWindow::shutdownHardware()
     stopConveyor();
     m_mangoQualityTimer->stop();
     stopMangoQualityProcess();
+    if (m_voicePromptProcess->state() != QProcess::NotRunning) {
+        m_voicePromptProcess->terminate();
+        if (!m_voicePromptProcess->waitForFinished(1500)) {
+            m_voicePromptProcess->kill();
+            m_voicePromptProcess->waitForFinished(500);
+        }
+    }
     stopSensorProcess();
     stopCameraProcess();
     if (m_motorCommandProcess->state() != QProcess::NotRunning) {
@@ -757,6 +780,13 @@ void MainWindow::showBatchStatsPage()
         m_functionPages->setCurrentIndex(4);
     }
     refreshBatchStatsData();
+}
+
+void MainWindow::showVoicePromptPage()
+{
+    if (m_functionPages) {
+        m_functionPages->setCurrentIndex(6);
+    }
 }
 
 void MainWindow::refreshSensorData()
@@ -1189,6 +1219,50 @@ void MainWindow::handleMangoQualityFinished(int exitCode, QProcess::ExitStatus e
     }
 }
 
+void MainWindow::announcePreviousMango()
+{
+    runVoicePromptCommand("previous", "上一个芒果");
+}
+
+void MainWindow::announceBatchMango()
+{
+    runVoicePromptCommand("batch", "整批芒果");
+}
+
+void MainWindow::readVoicePromptMessages()
+{
+    const QByteArray output = m_voicePromptProcess->readAllStandardOutput()
+                            + m_voicePromptProcess->readAllStandardError();
+    const QString message = QString::fromLocal8Bit(output).trimmed();
+    if (!message.isEmpty() && m_voicePromptStatusLabel) {
+        m_voicePromptStatusLabel->setText("状态：" + message.left(160));
+    }
+}
+
+void MainWindow::handleVoicePromptFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    const QByteArray output = m_voicePromptProcess->readAllStandardOutput()
+                            + m_voicePromptProcess->readAllStandardError();
+    const QString message = QString::fromLocal8Bit(output).trimmed();
+
+    if (m_voicePreviousButton) {
+        m_voicePreviousButton->setEnabled(true);
+    }
+    if (m_voiceBatchButton) {
+        m_voiceBatchButton->setEnabled(true);
+    }
+
+    if (!m_voicePromptStatusLabel) {
+        return;
+    }
+
+    if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+        m_voicePromptStatusLabel->setText("状态：语音评价已完成");
+    } else {
+        m_voicePromptStatusLabel->setText("状态：语音评价失败 " + message.left(140));
+    }
+}
+
 void MainWindow::readCameraFrames()
 {
     m_cameraBuffer.append(m_cameraProcess->readAllStandardOutput());
@@ -1505,6 +1579,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
     m_functionPages->addWidget(createMangoQualityPage());
     m_functionPages->addWidget(createBatchStatsPage());
     m_functionPages->addWidget(createServoControlPage());
+    m_functionPages->addWidget(createVoicePromptPage());
 
     layout->addWidget(title);
     layout->addWidget(m_functionPages, 1);
@@ -1552,6 +1627,12 @@ QWidget *MainWindow::createFunctionHomePage()
     batchButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(batchButton, &QPushButton::clicked, this, &MainWindow::showBatchStatsPage);
 
+    QPushButton *voiceButton = new QPushButton("语音评价");
+    voiceButton->setObjectName("featureButton_blue");
+    voiceButton->setFixedHeight(58);
+    voiceButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(voiceButton, &QPushButton::clicked, this, &MainWindow::showVoicePromptPage);
+
     QPushButton *historyButton = new QPushButton("历史记录");
     historyButton->setObjectName("featureButtonProminent");
     historyButton->setFixedHeight(64);
@@ -1559,7 +1640,7 @@ QWidget *MainWindow::createFunctionHomePage()
     connect(historyButton, &QPushButton::clicked, this, &MainWindow::showMangoHistoryPage);
 
     layout->addWidget(makeFunctionSection("实时使用", {conveyorButton, ledButton, servoButton}));
-    layout->addWidget(makeFunctionSection("数据查看", {mangoButton, batchButton, historyButton}));
+    layout->addWidget(makeFunctionSection("数据查看", {mangoButton, batchButton, voiceButton, historyButton}));
     layout->addStretch(1);
     return page;
 }
@@ -2051,6 +2132,48 @@ QWidget *MainWindow::createBatchStatsPage()
     layout->addWidget(scrollArea, 1);
 
     refreshBatchStatsData();
+    return page;
+}
+
+QWidget *MainWindow::createVoicePromptPage()
+{
+    QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(12);
+
+    QPushButton *backButton = new QPushButton("返回功能区");
+    backButton->setObjectName("secondaryButton");
+    backButton->setMinimumHeight(46);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
+
+    QLabel *title = new QLabel("语音评价");
+    title->setObjectName("controlTitle");
+
+    m_voicePreviousButton = new QPushButton("评价上一个芒果");
+    m_voicePreviousButton->setObjectName("primaryControlButton");
+    m_voicePreviousButton->setMinimumHeight(76);
+    connect(m_voicePreviousButton, &QPushButton::clicked, this, &MainWindow::announcePreviousMango);
+
+    m_voiceBatchButton = new QPushButton("评价整批芒果");
+    m_voiceBatchButton->setObjectName("primaryControlButton");
+    m_voiceBatchButton->setMinimumHeight(76);
+    connect(m_voiceBatchButton, &QPushButton::clicked, this, &MainWindow::announceBatchMango);
+
+    m_voicePromptStatusLabel = new QLabel("状态：等待语音评价");
+    m_voicePromptStatusLabel->setObjectName("motorStatus");
+    m_voicePromptStatusLabel->setWordWrap(true);
+    m_voicePromptStatusLabel->setMinimumHeight(70);
+
+    layout->addWidget(backButton);
+    layout->addWidget(title);
+    layout->addWidget(m_voicePreviousButton);
+    layout->addWidget(m_voiceBatchButton);
+    layout->addWidget(m_voicePromptStatusLabel);
+    layout->addStretch(1);
+
     return page;
 }
 
@@ -3118,6 +3241,64 @@ void MainWindow::moveServoToPosition3()
         m_servoPosition3Button->setChecked(true);
     }
     runServoCommand("3", "3号 45度");
+}
+
+void MainWindow::runVoicePromptCommand(const QString &target, const QString &label)
+{
+    if (m_voicePromptProcess->state() != QProcess::NotRunning) {
+        if (m_voicePromptStatusLabel) {
+            m_voicePromptStatusLabel->setText("状态：语音评价正在进行，请稍候");
+        }
+        return;
+    }
+
+    if (m_voicePreviousButton) {
+        m_voicePreviousButton->setEnabled(false);
+    }
+    if (m_voiceBatchButton) {
+        m_voiceBatchButton->setEnabled(false);
+    }
+    if (m_voicePromptStatusLabel) {
+        m_voicePromptStatusLabel->setText("状态：正在评价" + label);
+    }
+
+    QStringList args;
+    const QString voiceBackend = qEnvironmentVariable("VOICE_BACKEND", kDefaultVoiceBackend).trimmed();
+    const QString edgeVoice = qEnvironmentVariable("VOICE_EDGE_VOICE", kDefaultVoiceEdgeVoice).trimmed();
+    const QString alsaDevice = qEnvironmentVariable("VOICE_ALSA_DEVICE", kDefaultVoiceAlsaDevice).trimmed();
+    const QString ttsTimeout = qEnvironmentVariable("VOICE_TTS_TIMEOUT", "12").trimmed();
+    args << kVoiceAssistantScript
+         << "--once"
+         << "--target" << target
+         << "--speak-invalid"
+         << "--timeout" << "5";
+    if (!voiceBackend.isEmpty()) {
+        args << "--backend" << voiceBackend;
+    }
+    if (!edgeVoice.isEmpty()) {
+        args << "--edge-voice" << edgeVoice;
+    }
+    if (!ttsTimeout.isEmpty()) {
+        args << "--tts-timeout" << ttsTimeout;
+    }
+    if (!alsaDevice.isEmpty()) {
+        args << "--alsa-device" << alsaDevice;
+    }
+
+    m_voicePromptProcess->setWorkingDirectory("/home/elf/projects");
+    m_voicePromptProcess->start("python3", args);
+
+    if (!m_voicePromptProcess->waitForStarted(500)) {
+        if (m_voicePreviousButton) {
+            m_voicePreviousButton->setEnabled(true);
+        }
+        if (m_voiceBatchButton) {
+            m_voiceBatchButton->setEnabled(true);
+        }
+        if (m_voicePromptStatusLabel) {
+            m_voicePromptStatusLabel->setText("状态：语音评价程序启动失败");
+        }
+    }
 }
 
 void MainWindow::runServoCommand(const QString &position, const QString &label)
