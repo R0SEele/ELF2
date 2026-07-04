@@ -1,9 +1,51 @@
 page {
-  background: #f5f7f6;
-  color: #17332d;
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  /* Brand */
+  --brand-deep: #1f5f52;
+  --brand: #2b8c74;
+  --brand-bright: #37a98c;
+  --accent: #f5a623;
+  --accent-deep: #f0870f;
+
+  /* Semantic */
+  --ok: #2fb37a;
+  --ok-soft: #e4f6ee;
+  --warn: #f5a623;
+  --warn-soft: #fdf1dc;
+  --info: #3b82c4;
+  --info-soft: #e5eef8;
+  --danger: #e1543b;
+  --danger-soft: #fbe6e1;
+  --muted: #97a6a1;
+  --muted-soft: #eef2f1;
+
+  /* Neutral */
+  --bg: #f1f4f3;
+  --card: #ffffff;
+  --line: #eaefed;
+  --ink: #16342c;
+  --ink-2: #5c6f69;
+  --ink-3: #93a49e;
+
+  /* Shape */
+  --radius: 22rpx;
+  --radius-sm: 14rpx;
+  --shadow: 0 10rpx 30rpx rgba(23, 60, 50, 0.06);
+  --shadow-sm: 0 6rpx 16rpx rgba(23, 60, 50, 0.05);
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-size: 28rpx;
+  line-height: 1.4;
 }
 
 button {
   margin: 0;
+  padding: 0;
+  line-height: normal;
+  background: none;
+}
+
+button::after {
+  border: none;
 }

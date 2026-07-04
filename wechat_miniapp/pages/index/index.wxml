@@ -1,103 +1,160 @@
 <view class="page">
-  <view class="topbar">
-    <view>
-      <view class="title">芒果智检分拣终端</view>
-      <view class="subtitle">设备 {{deviceStatus}} · {{lastUpdated}}</view>
+  <!-- Hero -->
+  <view class="hero">
+    <view class="hero-top">
+      <view class="hero-brand">
+        <view class="hero-logo">🥭</view>
+        <view>
+          <view class="hero-title">芒果智检分拣终端</view>
+          <view class="hero-sub">
+            <text class="dot dot-{{connected ? 'on' : 'off'}}"></text>
+            {{connected ? '实时在线' : '连接断开'}} · {{lastUpdated}}
+          </view>
+        </view>
+      </view>
+      <view class="hero-gear" bindtap="toggleSettings">⚙</view>
     </view>
-    <view class="status {{connected ? 'online' : 'offline'}}">{{connected ? '在线' : '离线'}}</view>
+
+    <view class="hero-chips">
+      <view class="chip chip-{{deviceStatusClass}}">设备 {{deviceStatus}}</view>
+      <view class="chip chip-glass">{{cloudMode ? '☁ 云端同步' : '⇆ 本地代理'}}</view>
+    </view>
   </view>
 
   <scroll-view class="content" scroll-y="true">
-    <view class="connection-panel">
-      <view class="mode-line">
-        <view class="mode-badge">{{cloudMode ? '云端' : '本地'}}</view>
-        <view class="mode-text">{{cloudMode ? '微信云函数 · 涂鸦云影子' : '开发板本地代理'}}</view>
+    <!-- Connection settings (collapsible) -->
+    <view class="settings-panel {{showSettings ? 'open' : ''}}">
+      <view class="settings-row">
+        <text class="settings-label">接入地址</text>
+        <text class="settings-mode">{{cloudMode ? '云函数模式' : '本地模式'}}</text>
       </view>
       <view class="input-row">
-        <input class="text-input" value="{{endpointInput}}" bindinput="onEndpointInput" />
-        <button class="connect-button" bindtap="saveConnection">连接</button>
+        <input class="text-input" value="{{endpointInput}}" bindinput="onEndpointInput" placeholder="cloud://环境ID 或 http://IP:端口" />
       </view>
-      <input class="token-input" password="true" placeholder="访问口令（可选）" value="{{accessTokenInput}}" bindinput="onAccessTokenInput" />
+      <input class="text-input full" password="true" placeholder="访问口令（可选）" value="{{accessTokenInput}}" bindinput="onAccessTokenInput" />
+      <button class="btn btn-primary block" bindtap="saveConnection">保存并连接</button>
     </view>
 
-    <view class="summary-band">
-      <view class="summary-item">
-        <view class="summary-label">当前等级</view>
-        <view class="summary-value accent">{{overview.grade}}</view>
+    <!-- Verdict card -->
+    <view class="verdict card" bindtap="openQualityPage">
+      <view class="verdict-badge badge-{{overview.gradeClass}}">
+        <view class="verdict-badge-grade">{{overview.grade}}</view>
+        <view class="verdict-badge-cap">品质等级</view>
       </view>
-      <view class="summary-item">
-        <view class="summary-label">建议通道</view>
-        <view class="summary-value">{{overview.channel}}</view>
+      <view class="verdict-body">
+        <view class="verdict-row">
+          <text class="verdict-key">芒果编号</text>
+          <text class="verdict-id">#{{overview.mangoId}}</text>
+        </view>
+        <view class="tag tag-{{overview.channelClass}}">↳ {{overview.channel}}</view>
+        <view class="verdict-conclusion">{{overview.conclusion}}</view>
       </view>
-      <view class="summary-item wide">
-        <view class="summary-label">综合结论</view>
-        <view class="summary-value">{{overview.conclusion}}</view>
-      </view>
-      <view class="summary-action" bindtap="openQualityPage">查看检测数据</view>
+      <view class="verdict-arrow">›</view>
     </view>
 
-    <view class="section">
-      <view class="section-title">环境监测</view>
-      <view class="metric-grid">
-        <view class="metric" wx:for="{{environment}}" wx:key="code">
-          <view class="metric-label">{{item.label}}</view>
-          <view class="metric-value">{{item.display}}</view>
+    <!-- Environment -->
+    <view class="card">
+      <view class="card-head">
+        <view class="card-title"><text class="card-ico">🌿</text>环境监测</view>
+        <view class="tag tag-{{envStatus.class}}">{{envStatus.display}}</view>
+      </view>
+      <view class="env-grid">
+        <view class="env-tile" wx:for="{{environment}}" wx:key="code">
+          <view class="env-ico">{{item.icon}}</view>
+          <view class="env-meta">
+            <view class="env-label">{{item.label}}</view>
+            <view class="env-value">{{item.display}}</view>
+          </view>
         </view>
       </view>
     </view>
 
-    <view class="section">
-      <view class="section-title">批次统计</view>
-      <view class="batch-grid">
-        <view class="metric" wx:for="{{batch}}" wx:key="code">
-          <view class="metric-label">{{item.label}}</view>
-          <view class="metric-value">{{item.display}}</view>
+    <!-- Batch -->
+    <view class="card">
+      <view class="card-head">
+        <view class="card-title"><text class="card-ico">📦</text>批次统计</view>
+        <view class="batch-total"><text class="batch-total-num">{{batch.total}}</text> 个</view>
+      </view>
+      <view class="bar-track">
+        <view class="bar-seg seg-ok" style="width:{{batch.aPct}}%"></view>
+        <view class="bar-seg seg-warn" style="width:{{batch.bPct}}%"></view>
+        <view class="bar-seg seg-danger" style="width:{{batch.rejectPct}}%"></view>
+      </view>
+      <view class="legend">
+        <view class="legend-item">
+          <text class="legend-dot d-ok"></text>A级
+          <text class="legend-num">{{batch.a}}</text>
+        </view>
+        <view class="legend-item">
+          <text class="legend-dot d-warn"></text>B级
+          <text class="legend-num">{{batch.b}}</text>
+        </view>
+        <view class="legend-item">
+          <text class="legend-dot d-danger"></text>剔除
+          <text class="legend-num">{{batch.reject}}</text>
         </view>
       </view>
     </view>
 
-    <view class="section">
-      <view class="section-title">设备控制</view>
-
-      <view class="control-row">
-        <view class="control-label">传送带</view>
-        <picker range="{{conveyorOptions}}" range-key="label" value="{{conveyorIndex}}" bindchange="onConveyorChange">
-          <view class="picker-value">{{conveyorOptions[conveyorIndex].label}}</view>
-        </picker>
+    <!-- Control -->
+    <view class="card">
+      <view class="card-head">
+        <view class="card-title"><text class="card-ico">🎛️</text>设备控制</view>
       </view>
 
-      <view class="control-row">
-        <view class="control-label">速度</view>
-        <picker range="{{speedOptions}}" range-key="label" value="{{speedIndex}}" bindchange="onSpeedChange">
-          <view class="picker-value">{{speedOptions[speedIndex].label}}</view>
-        </picker>
+      <view class="ctrl-block">
+        <view class="ctrl-label">传送带</view>
+        <view class="segment">
+          <view class="seg-btn {{index === conveyorIndex ? 'active' : ''}}"
+                wx:for="{{conveyorOptions}}" wx:key="value"
+                data-index="{{index}}" bindtap="onConveyorTap">{{item.label}}</view>
+        </view>
       </view>
 
-      <view class="control-row">
-        <view class="control-label">分拣位</view>
-        <picker range="{{sorterOptions}}" range-key="label" value="{{sorterIndex}}" bindchange="onSorterChange">
-          <view class="picker-value">{{sorterOptions[sorterIndex].label}}</view>
-        </picker>
+      <view class="ctrl-block">
+        <view class="ctrl-label">传送速度</view>
+        <view class="segment">
+          <view class="seg-btn {{index === speedIndex ? 'active' : ''}}"
+                wx:for="{{speedOptions}}" wx:key="value"
+                data-index="{{index}}" bindtap="onSpeedTap">{{item.label}}</view>
+        </view>
+      </view>
+
+      <view class="ctrl-block">
+        <view class="ctrl-label">分拣位置</view>
+        <view class="segment">
+          <view class="seg-btn {{index === sorterIndex ? 'active' : ''}}"
+                wx:for="{{sorterOptions}}" wx:key="value"
+                data-index="{{index}}" bindtap="onSorterTap">{{item.label}}</view>
+        </view>
       </view>
 
       <view class="switch-row">
-        <view class="control-label">补光灯</view>
-        <switch checked="{{ledOn}}" color="#1f7a62" bindchange="onLedSwitch" />
+        <view class="ctrl-label inline">💡 补光灯</view>
+        <switch checked="{{ledOn}}" color="#2fb37a" bindchange="onLedSwitch" />
       </view>
 
       <view class="slider-row">
-        <view class="control-label">亮度 {{ledBrightness}}%</view>
-        <slider min="0" max="100" step="1" value="{{ledBrightness}}" activeColor="#1f7a62" bindchange="onBrightnessChange" />
+        <view class="slider-head">
+          <text class="ctrl-label inline">亮度</text>
+          <text class="slider-val">{{ledBrightness}}%</text>
+        </view>
+        <slider min="0" max="100" step="1" value="{{ledBrightness}}" block-size="20"
+                activeColor="#f5a623" backgroundColor="#e8edeb"
+                bindchange="onBrightnessChange" bindchanging="onBrightnessChanging" />
       </view>
 
-      <view class="switch-row">
-        <view class="control-label">自动分拣</view>
-        <switch checked="{{autoSort}}" color="#1f7a62" bindchange="onAutoSortChange" />
+      <view class="switch-row no-border">
+        <view class="ctrl-label inline">🤖 自动分拣</view>
+        <switch checked="{{autoSort}}" color="#2fb37a" bindchange="onAutoSortChange" />
       </view>
 
-      <view class="button-row">
-        <button class="command-button" wx:for="{{detectOptions}}" wx:key="value" data-value="{{item.value}}" bindtap="onDetectTap">{{item.label}}</button>
+      <view class="action-row">
+        <button class="btn btn-{{item.kind}}" wx:for="{{detectOptions}}" wx:key="value"
+                data-value="{{item.value}}" bindtap="onDetectTap">{{item.label}}</button>
       </view>
     </view>
+
+    <view class="footer">RK3588 · 端侧 AI 视觉质检系统</view>
   </scroll-view>
 </view>
