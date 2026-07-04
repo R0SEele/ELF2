@@ -113,13 +113,7 @@ Page({
   },
 
   onLoad() {
-    this.setData({
-      endpointInput: app.globalData.apiBase,
-      accessTokenInput: app.globalData.accessToken,
-      cloudMode: app.globalData.useCloud
-    });
-    this.refreshStatus();
-    this.timer = setInterval(() => this.refreshStatus(), 3000);
+    // 轮询在 onShow 启动、onHide 停止，避免跳转到其它页面后仍在后台请求
   },
 
   onShow() {
@@ -128,21 +122,41 @@ Page({
       accessTokenInput: app.globalData.accessToken,
       cloudMode: app.globalData.useCloud
     });
+    this.startPolling();
+  },
+
+  onHide() {
+    this.stopPolling();
   },
 
   onUnload() {
+    this.stopPolling();
+  },
+
+  startPolling() {
+    this.stopPolling();
+    this.refreshStatus();
+    this.timer = setInterval(() => this.refreshStatus(), 3000);
+  },
+
+  stopPolling() {
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = null;
     }
   },
 
   refreshStatus() {
-    if (this.data.loading) {
+    // 用时间戳做并发锁：请求超过 10 秒仍未返回时强制放行，避免锁死后自动刷新永久停摆
+    const now = Date.now();
+    if (this._inflight && now - this._inflightAt < 10000) {
       return;
     }
-    this.setData({ loading: true });
+    this._inflight = true;
+    this._inflightAt = now;
     app.requestDeviceStatus()
       .then((data) => {
+        this._inflight = false;
         const quality = itemMap(data.groups.quality);
         const control = itemMap(data.groups.control);
         const device = itemMap(data.groups.device);
@@ -155,13 +169,13 @@ Page({
           item.icon = ENV_ICON[item.code] || "📊";
         });
         const envMap = itemMap(data.groups.environment);
+        const hasDeviceStatus = !!device.device_status;
 
-        this.setData({
+        const patch = {
           connected: true,
-          loading: false,
           cloudMode: data.source === "tuya",
-          deviceStatus: device.device_status ? device.device_status.display : "在线",
-          deviceStatusClass: this.deviceClass(rawOf(device, "device_status")),
+          deviceStatus: hasDeviceStatus ? device.device_status.display : "在线",
+          deviceStatusClass: hasDeviceStatus ? this.deviceClass(rawOf(device, "device_status")) : "ok",
           lastUpdated: this.formatTime(data.updated_at),
           overview: {
             grade: pickDisplay(quality, "quality_grade"),
@@ -176,19 +190,25 @@ Page({
             class: classFrom(ENV_CLASS, rawOf(envMap, "env_status"))
           },
           environment,
-          batch: this.buildBatch(itemMap(data.groups.batch)),
-          ledOn: control.led_switch ? !!control.led_switch.value : this.data.ledOn,
-          ledBrightness: control.led_brightness ? Number(control.led_brightness.value) : this.data.ledBrightness,
-          autoSort: control.auto_sort_enable ? !!control.auto_sort_enable.value : this.data.autoSort,
-          conveyorIndex: this.indexFor("conveyor_cmd", conveyorValue),
-          speedIndex: this.indexFor("conveyor_speed", speedValue),
-          sorterIndex: this.indexFor("sorter_position", sorterValue)
-        });
+          batch: this.buildBatch(itemMap(data.groups.batch))
+        };
+
+        // 刚下发过控制命令时，涂鸦设备影子可能还没回写新值；此窗口内保留本地乐观状态，避免控件“回弹”
+        if (Date.now() >= (this.controlLockUntil || 0)) {
+          patch.ledOn = control.led_switch ? !!control.led_switch.value : this.data.ledOn;
+          patch.ledBrightness = control.led_brightness ? Number(control.led_brightness.value) : this.data.ledBrightness;
+          patch.autoSort = control.auto_sort_enable ? !!control.auto_sort_enable.value : this.data.autoSort;
+          patch.conveyorIndex = this.indexFor("conveyor_cmd", conveyorValue);
+          patch.speedIndex = this.indexFor("conveyor_speed", speedValue);
+          patch.sorterIndex = this.indexFor("sorter_position", sorterValue);
+        }
+
+        this.setData(patch);
       })
       .catch((err) => {
+        this._inflight = false;
         this.setData({
           connected: false,
-          loading: false,
           deviceStatus: "未连接",
           deviceStatusClass: "danger"
         });
@@ -221,6 +241,8 @@ Page({
   },
 
   sendCommand(code, value) {
+    // 下发后 4 秒内以本地状态为准，给设备影子留出回写时间
+    this.controlLockUntil = Date.now() + 4000;
     app.sendDeviceCommand(code, value)
       .then(() => {
         this.refreshStatus();
@@ -262,6 +284,7 @@ Page({
       showSettings: false
     });
     wx.showToast({ title: "已保存", icon: "success" });
+    this._inflight = false; // 放行可能在途的旧端点请求，立即按新端点刷新
     this.refreshStatus();
   },
 

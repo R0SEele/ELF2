@@ -39,28 +39,48 @@ Page({
   },
 
   onLoad() {
+    // 轮询在 onShow 启动、onHide 停止，避免返回上一页后仍在后台请求
+  },
+
+  onShow() {
+    this.startPolling();
+  },
+
+  onHide() {
+    this.stopPolling();
+  },
+
+  onUnload() {
+    this.stopPolling();
+  },
+
+  startPolling() {
+    this.stopPolling();
     this.refreshStatus();
     this.timer = setInterval(() => this.refreshStatus(), 3000);
   },
 
-  onUnload() {
+  stopPolling() {
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = null;
     }
   },
 
   refreshStatus() {
-    if (this.data.loading) {
+    const now = Date.now();
+    if (this._inflight && now - this._inflightAt < 10000) {
       return;
     }
-    this.setData({ loading: true });
+    this._inflight = true;
+    this._inflightAt = now;
     app.requestDeviceStatus()
       .then((payload) => {
+        this._inflight = false;
         const quality = payload.groups.quality || [];
         const map = itemMap(quality);
         this.setData({
           connected: true,
-          loading: false,
           lastUpdated: this.formatTime(payload.updated_at),
           headline: {
             mangoId: display(map, "mango_id"),
@@ -76,7 +96,8 @@ Page({
         });
       })
       .catch((err) => {
-        this.setData({ connected: false, loading: false });
+        this._inflight = false;
+        this.setData({ connected: false });
         if (err && err.error) {
           wx.showToast({ title: err.error, icon: "none" });
         }
