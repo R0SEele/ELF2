@@ -386,21 +386,28 @@
 
 /* ---------- 环境监测网格 ---------- */
 .env-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .env-tile {
+  box-sizing: border-box;
+  width: calc((100% - 16rpx) / 2);
+  margin: 0 16rpx 16rpx 0;
   display: flex;
   align-items: center;
-  gap: 16rpx;
   padding: 20rpx;
   border-radius: var(--radius-sm);
   background: #f8faf9;
 }
 
+.env-tile:nth-child(2n) {
+  margin-right: 0;
+}
+
 .env-ico {
+  flex-shrink: 0;
+  margin-right: 16rpx;
   width: 64rpx;
   height: 64rpx;
   line-height: 64rpx;
@@ -579,10 +586,17 @@
 }
 
 .action-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14rpx;
+  display: flex;
   margin-top: 26rpx;
+}
+
+.action-row .btn {
+  flex: 1;
+  margin-left: 14rpx;
+}
+
+.action-row .btn:first-child {
+  margin-left: 0;
 }
 
 /* ---------- 页脚 ---------- */
