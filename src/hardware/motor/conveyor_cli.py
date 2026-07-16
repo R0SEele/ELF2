@@ -11,10 +11,10 @@ from pathlib import Path
 import yaml
 
 try:
-    from .controller import ZDTMotorController
+    from .controller import MotorCommandRejectedError, ZDTMotorController
     from .serial_bus import SerialConfig
 except ImportError:
-    from controller import ZDTMotorController
+    from controller import MotorCommandRejectedError, ZDTMotorController
     from serial_bus import SerialConfig
 
 
@@ -22,6 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_PATH = PROJECT_ROOT / "config" / "motor.yaml"
 DEFAULT_MIN_SPEED_MS = 0.1
 DEFAULT_MAX_SPEED_MS = 1.0
+STOP_SPEED_TOLERANCE_RPM = 1.0
 
 
 class ConveyorCommandError(Exception):
@@ -97,6 +98,30 @@ def _ensure_serial_port(path: str) -> None:
         raise ConveyorCommandError(f"no permission to access serial port: {path}")
 
 
+def _stop_conveyor(ctrl, wait_ack: bool, sync: int) -> None:
+    stop_error = None
+    try:
+        ctrl.stop(wait_ack=wait_ack)
+    except Exception as exc:
+        stop_error = exc
+
+    try:
+        ctrl.enable(False, sync=sync, wait_ack=False)
+    except Exception:
+        pass
+
+    if stop_error is None:
+        return
+    if isinstance(stop_error, MotorCommandRejectedError) and stop_error.status == 0xE2:
+        time.sleep(0.05)
+        try:
+            if abs(ctrl.read_speed_rpm()) <= STOP_SPEED_TOLERANCE_RPM:
+                return
+        except Exception:
+            pass
+    raise stop_error
+
+
 def main():
     parser = argparse.ArgumentParser(description="Single-shot conveyor command for Qt UI")
     parser.add_argument("command", choices=("forward", "reverse", "stop"))
@@ -130,11 +155,7 @@ def main():
         ctrl = _make_controller(cfg)
         try:
             if args.command == "stop":
-                ctrl.stop(wait_ack=wait_ack)
-                try:
-                    ctrl.enable(False, sync=sync, wait_ack=False)
-                except Exception:
-                    pass
+                _stop_conveyor(ctrl, wait_ack, sync)
                 print("stopped")
                 return 0
 

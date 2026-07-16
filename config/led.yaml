@@ -11,7 +11,9 @@ led:
     color_order: GRB
     # Set this to the total number of WS2812B LEDs in the ring.
     count: 90
-    default_brightness_pct: 80  # 默认亮度
+    # 90 LEDs at 80% white can draw about 4.3 A. Keep startup current low;
+    # use a dedicated 5 V LED supply before raising this value.
+    default_brightness_pct: 40
     max_brightness_pct: 100
     state_file: /home/elf/projects/datas/csv/led_state.csv
     sensor_csv: /home/elf/projects/datas/csv/sensor_realtime.csv

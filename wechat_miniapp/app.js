@@ -1,4 +1,17 @@
 const DEFAULT_CLOUD_ENV = "cloud1-d3gawfd5o88014f88";
+const CONNECTION_STORAGE_VERSION = 2;
+const COMMAND_ACK_TIMEOUT_MS = 7000;
+const COMMAND_ACK_POLL_MS = 500;
+
+function sameControlValue(left, right) {
+  if (typeof right === "boolean") {
+    return Boolean(left) === right;
+  }
+  if (typeof right === "number") {
+    return Number(left) === right;
+  }
+  return String(left) === String(right);
+}
 
 App({
   globalData: {
@@ -15,11 +28,17 @@ App({
     }
 
     const stored = wx.getStorageSync("apiBase");
-    if (stored) {
+    const storageVersion = Number(wx.getStorageSync("connectionStorageVersion") || 0);
+    if (stored && storageVersion >= CONNECTION_STORAGE_VERSION) {
       this.configureEndpoint(stored, false);
     } else {
-      this.enableCloud(DEFAULT_CLOUD_ENV, false);
+      // Older releases defaulted to 127.0.0.1 and persisted that address. On a
+      // phone it points back to the phone, so migrate once to the cloud route.
+      wx.removeStorageSync("apiBase");
+      wx.removeStorageSync("cloudEnv");
+      this.enableCloud(DEFAULT_CLOUD_ENV, true);
     }
+    wx.setStorageSync("connectionStorageVersion", CONNECTION_STORAGE_VERSION);
   },
 
   normalizeCloudEnv(value) {
@@ -50,6 +69,7 @@ App({
     if (persist) {
       wx.setStorageSync("cloudEnv", normalized);
       wx.setStorageSync("apiBase", this.globalData.apiBase);
+      wx.setStorageSync("connectionStorageVersion", CONNECTION_STORAGE_VERSION);
     }
     return true;
   },
@@ -61,6 +81,7 @@ App({
     if (persist) {
       wx.removeStorageSync("cloudEnv");
       wx.setStorageSync("apiBase", this.globalData.apiBase);
+      wx.setStorageSync("connectionStorageVersion", CONNECTION_STORAGE_VERSION);
     }
   },
 
@@ -122,10 +143,43 @@ App({
     return this.request("/api/device/status");
   },
 
+  waitForDeviceCommand(code, value, baselineUpdatedAt, deadline) {
+    return this.requestDeviceStatus().then((payload) => {
+      const status = payload.status || {};
+      const updatedAt = payload.status_updated_at || {};
+      const hasDeviceTimestamps = Object.keys(updatedAt).length > 0;
+      const isNewer = (key) => Number(updatedAt[key] || 0) > Number(baselineUpdatedAt[key] || 0);
+      const deviceResultFresh = !hasDeviceTimestamps
+        || (isNewer(code) && isNewer("device_status") && isNewer("error_message"));
+
+      if (deviceResultFresh) {
+        if (status.device_status === "error" || status.error_message) {
+          throw { error: status.error_message || "设备执行命令失败" };
+        }
+        if (Object.prototype.hasOwnProperty.call(status, code) && sameControlValue(status[code], value)) {
+          return { acknowledged: true, code, value, status, status_updated_at: updatedAt };
+        }
+      }
+      if (Date.now() >= deadline) {
+        throw { error: `设备未在 ${COMMAND_ACK_TIMEOUT_MS / 1000} 秒内确认命令` };
+      }
+      return new Promise((resolve) => setTimeout(resolve, COMMAND_ACK_POLL_MS))
+        .then(() => this.waitForDeviceCommand(code, value, baselineUpdatedAt, deadline));
+    });
+  },
+
   sendDeviceCommand(code, value) {
-    return this.request("/api/device/command", {
-      method: "POST",
-      data: { code, value }
+    return this.requestDeviceStatus().then((before) => {
+      const baselineUpdatedAt = before.status_updated_at || {};
+      return this.request("/api/device/command", {
+        method: "POST",
+        data: { code, value }
+      }).then((result) => this.waitForDeviceCommand(
+        code,
+        value,
+        baselineUpdatedAt,
+        Date.now() + COMMAND_ACK_TIMEOUT_MS
+      ).then((acknowledgement) => Object.assign({}, result, { acknowledgement })));
     });
   }
 });

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import os
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,10 +21,33 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_PATH = PROJECT_ROOT / "config" / "servo.yaml"
+SERVO_LOCK_PATH = Path("/tmp/elf-mango-sorter-servo.lock")
+SERVO_LOCK_TIMEOUT_S = 2.0
 
 
 class SorterServoError(Exception):
     pass
+
+
+@contextmanager
+def _servo_lock(path: Path = SERVO_LOCK_PATH, timeout_s: float = SERVO_LOCK_TIMEOUT_S):
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o666)
+    deadline = time.monotonic() + max(0.0, timeout_s)
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise SorterServoError("servo is busy: another command is still running")
+                time.sleep(0.02)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 @dataclass(frozen=True)
@@ -159,19 +185,19 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
-    servo = None
     try:
-        servo = load_sorter_servo(Path(args.config))
-        actual = servo.sort_to(args.position, wait=not args.no_wait)
-        print(f"position={args.position} angle={actual:.1f}deg")
-        return 0
+        with _servo_lock():
+            servo = load_sorter_servo(Path(args.config))
+            try:
+                actual = servo.sort_to(args.position, wait=not args.no_wait)
+                print(f"position={args.position} angle={actual:.1f}deg")
+                return 0
+            finally:
+                disable_after_move = args.disable_after_move or not args.hold_after_move
+                servo.close(disable=disable_after_move)
     except (SorterServoError, ServoError, OSError, ValueError) as exc:
         print(f"servo command failed: {exc}", file=sys.stderr)
         return 1
-    finally:
-        if servo is not None:
-            disable_after_move = args.disable_after_move or not args.hold_after_move
-            servo.close(disable=disable_after_move)
 
 
 if __name__ == "__main__":

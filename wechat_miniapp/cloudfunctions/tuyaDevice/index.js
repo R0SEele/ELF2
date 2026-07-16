@@ -243,9 +243,14 @@ function normalizeValue(code, value) {
 
 function buildStatusPayload(deviceId, properties) {
   const status = {};
+  const statusUpdatedAt = {};
   for (const item of properties || []) {
     if (item && item.code) {
       status[item.code] = item.value;
+      const updatedAt = Number(item.time || item.update_time || 0);
+      if (updatedAt > 0) {
+        statusUpdatedAt[item.code] = updatedAt;
+      }
     }
   }
 
@@ -280,6 +285,7 @@ function buildStatusPayload(deviceId, properties) {
     device_id: deviceId,
     updated_at: Date.now(),
     status,
+    status_updated_at: statusUpdatedAt,
     items,
     groups,
     group_labels: GROUP_LABELS

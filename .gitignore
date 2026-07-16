@@ -13,4 +13,5 @@ datas/csv/*debug*.csv
 datas/csv/tuya_proxy_control_state.json
 datas/csv/mango_batch_state.json
 datas/snapshots/
+datas/tuya_iot/
 config/tuya_cloud_secrets.json

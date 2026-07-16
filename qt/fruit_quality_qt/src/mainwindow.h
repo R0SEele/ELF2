@@ -239,6 +239,7 @@ private:
 
     QStackedWidget *m_pages;
     QStackedWidget *m_functionPages;
+    QWidget *m_environmentTrendPage;
     QFrame *m_videoPanel;
     AspectRatioVideoFrame *m_videoSurface;
     VideoDisplayWidget *m_videoDisplay;
@@ -253,6 +254,8 @@ private:
     QProcess *m_voicePromptProcess;
     QProcess *m_cameraProcess;
     QProcess *m_motorCommandProcess;
+    QProcess *m_servoCommandProcess;
+    QTimer *m_servoCommandTimer;
     QProcess *m_tuyaIotProcess;
     QTimer *m_iotStatusTimer;
     QTimer *m_controlStateTimer;
@@ -325,6 +328,8 @@ private:
     QPushButton *m_servoPosition1Button;
     QPushButton *m_servoPosition2Button;
     QPushButton *m_servoPosition3Button;
+    QString m_servoCommandLabel;
+    bool m_servoCommandTimedOut;
     int m_conveyorDirection;
     int m_conveyorMinSpeedX10;
     int m_conveyorMaxSpeedX10;

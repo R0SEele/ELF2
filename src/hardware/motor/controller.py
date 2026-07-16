@@ -14,6 +14,16 @@ class MotorControllerError(Exception):
     pass
 
 
+class MotorCommandRejectedError(MotorControllerError):
+    def __init__(self, command: int, status: int, reply: bytes):
+        self.command = command
+        self.status = status
+        self.reply = reply
+        super().__init__(
+            f"command 0x{command:02X} failed, status=0x{status:02X}, reply={reply.hex(' ')}"
+        )
+
+
 @dataclass
 class MotorLimits:
     max_speed_rpm: float = 3000.0
@@ -52,9 +62,7 @@ class ZDTMotorController:
 
         # 0x02 成功，0xE2 条件不满足，0xEE 命令错误
         if status != 0x02:
-            raise MotorControllerError(
-                f"command 0x{command:02X} failed, status=0x{status:02X}, reply={reply.hex(' ')}"
-            )
+            raise MotorCommandRejectedError(command, status, reply)
 
     def read_version(self) -> tuple[int, int]:
         req = self.protocol.cmd_read_version(self.address)
