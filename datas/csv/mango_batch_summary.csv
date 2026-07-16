@@ -1,2 +1,2 @@
 timestamp,batch_id,total_count,unripe_count,ripe_count,overripe_count,grade_a_count,grade_b_count,grade_c_count,reject_count,saleable_count,saleable_ratio,rot_risk_count,rot_risk_ratio,channel_sales_count,channel_ripen_count,channel_process_count,channel_recheck_count,channel_reject_count,last_mango_id,last_quality_grade,last_suggested_channel,last_maturity_label,last_final_status,last_timestamp
-2026-07-04 21:29:53,20260704_212932,0,0,0,0,0,0,0,0,0,0.00,0,0.00,0,0,0,0,0,,,,,,
+2026-07-16 11:14:58,20260716_103735,17,6,2,9,0,0,5,12,0,0.00,17,100.00,0,0,0,5,12,17,剔除,剔除通道,过熟,建议剔除,2026-07-16 10:52:26

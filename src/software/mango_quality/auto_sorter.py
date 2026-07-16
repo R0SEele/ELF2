@@ -100,25 +100,30 @@ class AutoSorter:
             "final_status": getattr(assessment, "final_status", ""),
             "delay_s": "{:.2f}".format(self.delay_s),
         }
-        self._queue.put((position, row))
+        execute_at = time.monotonic() + self.delay_s
+        self._queue.put((execute_at, position, row))
         return True
 
     def _run_worker(self):
         while not self._stop_event.is_set() or not self._queue.empty():
             try:
-                position, row = self._queue.get(timeout=0.1)
+                execute_at, position, row = self._queue.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
-                self._execute_sort(position, row)
+                self._execute_sort(position, row, execute_at)
             finally:
                 self._queue.task_done()
 
-    def _execute_sort(self, position, row):
-        if self.delay_s > 0:
-            time.sleep(self.delay_s)
+    def _execute_sort(self, position, row, execute_at=None):
+        if execute_at is not None:
+            remaining = execute_at - time.monotonic()
+            if remaining > 0:
+                time.sleep(remaining)
 
         cmd = ["python3", str(self.sorter_script), position, "--config", str(self.config_path)]
+        if self.reset_to_center and position != "2":
+            cmd.append("--hold-after-move")
         try:
             result = subprocess.run(cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=5)
             message = (result.stdout or result.stderr or "").strip()
@@ -130,21 +135,33 @@ class AutoSorter:
             _append_event(self.log_csv, row)
             return False
 
-        _append_event(self.log_csv, row)
-
         if result.returncode != 0:
+            _append_event(self.log_csv, row)
             return False
 
         if self.reset_to_center and position != "2":
             if self.reset_delay_s > 0:
                 time.sleep(self.reset_delay_s)
-            subprocess.run(
-                ["python3", str(self.sorter_script), "2", "--config", str(self.config_path)],
-                cwd=str(PROJECT_ROOT),
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
+            try:
+                reset_result = subprocess.run(
+                    ["python3", str(self.sorter_script), "2", "--config", str(self.config_path)],
+                    cwd=str(PROJECT_ROOT),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except Exception as exc:
+                row["result"] = "reset_failed"
+                row["message"] = str(exc)[:180]
+                _append_event(self.log_csv, row)
+                return False
+            if reset_result.returncode != 0:
+                row["result"] = "reset_failed"
+                row["message"] = (reset_result.stderr or reset_result.stdout or "").strip()[:180]
+                _append_event(self.log_csv, row)
+                return False
+
+        _append_event(self.log_csv, row)
         return True
 
     def close(self, drain=True, timeout_s=8.0):

@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QEvent>
 #include <QHBoxLayout>
@@ -11,6 +12,8 @@
 #include <QLayout>
 #include <QFileInfo>
 #include <QImage>
+#include <QJsonDocument>
+#include <QJsonParseError>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -26,6 +29,7 @@
 #include <QVBoxLayout>
 #include <QtGlobal>
 
+#include <algorithm>
 #include <numeric>
 
 namespace {
@@ -51,12 +55,15 @@ const char *kSensorCsvFile = "/home/elf/projects/datas/csv/sensor_realtime.csv";
 const char *kMangoQualityCsvFile = "/home/elf/projects/datas/csv/mango_quality_realtime.csv";
 const char *kMangoBatchCsvFile = "/home/elf/projects/datas/csv/mango_batch_summary.csv";
 const char *kMangoHistoryCsvFile = "/home/elf/projects/datas/csv/mango_quality_history.csv";
+const char *kControlStateJsonFile = "/home/elf/projects/datas/csv/tuya_proxy_control_state.json";
+const char *kSnapshotDirectory = "/home/elf/projects/datas/snapshots";
 const int kEnvironmentSampleIntervalS = 5;
 const int kSensorRefreshIntervalMs = 5000;
 const int kLedAutoIntervalMs = 5000;
 const int kLedAutoMinAdjustGapMs = 4500;
 const int kIotStatusIntervalMs = 5000;
 const int kIotNetworkTimeoutMs = 4000;
+const int kControlStateIntervalMs = 300;
 const int kLedAutoDeadbandLux = 100;
 const int kLedAutoMediumErrorLux = 300;
 const int kLedAutoLargeErrorLux = 600;
@@ -82,6 +89,32 @@ QString defaultSensorName(int index)
     }
 
     return QString("数据 %1").arg(index + 1);
+}
+
+struct EnvironmentMetricDefinition
+{
+    QString key;
+    QString label;
+    QString unit;
+    QColor color;
+    int decimals;
+};
+
+const QVector<EnvironmentMetricDefinition> &environmentMetrics()
+{
+    static const QVector<EnvironmentMetricDefinition> metrics = {
+        {"temperature_c", "温度", "°C", QColor("#C75B50"), 1},
+        {"humidity_rh", "湿度", "%RH", QColor("#2F7A62"), 1},
+        {"co2_ppm", "CO₂", "ppm", QColor("#536D7A"), 0},
+        {"light_lux", "光照", "lx", QColor("#B9852B"), 0},
+        {"air_quality_ppm", "空气质量", "%", QColor("#7A5C78"), 1}
+    };
+    return metrics;
+}
+
+QString formatEnvironmentValue(double value, const EnvironmentMetricDefinition &metric)
+{
+    return QString("%1 %2").arg(value, 0, 'f', metric.decimals).arg(metric.unit);
 }
 
 class CompactStackedWidget : public QStackedWidget
@@ -122,6 +155,57 @@ QPixmap loadStartLogo()
     }
 
     return QPixmap::fromImage(image);
+}
+
+QString compactProcessMessage(const QByteArray &payload, int maxChars = 160)
+{
+    QString message = QString::fromLocal8Bit(payload).trimmed();
+    if (message.isEmpty()) {
+        return QString();
+    }
+
+    message.replace('\r', '\n');
+    const QStringList lines = message.split('\n');
+    for (int i = lines.size() - 1; i >= 0; --i) {
+        const QString line = lines.at(i).trimmed();
+        if (!line.isEmpty()) {
+            message = line;
+            break;
+        }
+    }
+    message = message.simplified();
+    if (message.size() > maxChars) {
+        message = message.left(maxChars) + "...";
+    }
+    return message;
+}
+
+bool processMessageLooksLikeError(const QString &message)
+{
+    const QString lower = message.toLower();
+    return lower.contains("error")
+        || lower.contains("exception")
+        || lower.contains("traceback")
+        || lower.contains("failed")
+        || lower.contains("permission")
+        || lower.contains("denied")
+        || message.contains("错误")
+        || message.contains("异常")
+        || message.contains("失败")
+        || message.contains("权限");
+}
+
+QString displayMangoId(const QString &value)
+{
+    const QString mangoId = value.trimmed();
+    if (mangoId.isEmpty() || mangoId == "--") {
+        return mangoId;
+    }
+
+    const QString tail = mangoId.section('-', -1);
+    bool isNumber = false;
+    tail.toLongLong(&isNumber);
+    return isNumber ? tail : mangoId;
 }
 }
 
@@ -541,9 +625,11 @@ MainWindow::MainWindow(QWidget *parent)
       m_motorCommandProcess(new QProcess(this)),
       m_tuyaIotProcess(new QProcess(this)),
       m_iotStatusTimer(new QTimer(this)),
+      m_controlStateTimer(new QTimer(this)),
       m_iotNetworkManager(new QNetworkAccessManager(this)),
       m_iotNetworkReply(nullptr),
       m_networkStatusLabel(nullptr),
+      m_lastDetectCommandAtMs(0),
       m_sensorReader(kSensorCsvFile),
       m_conveyorSpeedSlider(nullptr),
       m_conveyorSpeedValueLabel(nullptr),
@@ -587,6 +673,13 @@ MainWindow::MainWindow(QWidget *parent)
       m_batchMaturityChart(nullptr),
       m_batchGradeChart(nullptr),
       m_batchChannelChart(nullptr),
+      m_environmentTrendChart(nullptr),
+      m_environmentCurrentValueLabel(nullptr),
+      m_environmentMinValueLabel(nullptr),
+      m_environmentMaxValueLabel(nullptr),
+      m_environmentTrendStatusLabel(nullptr),
+      m_environmentMetricIndex(0),
+      m_environmentRangeMinutes(60),
       m_historyTable(nullptr),
       m_historySummaryLabel(nullptr),
       m_voicePromptStatusLabel(nullptr),
@@ -664,6 +757,10 @@ MainWindow::MainWindow(QWidget *parent)
             &MainWindow::handleTuyaIotFinished);
     connect(m_iotStatusTimer, &QTimer::timeout, this, &MainWindow::updateIotStatus);
     m_iotStatusTimer->setInterval(kIotStatusIntervalMs);
+    connect(m_controlStateTimer, &QTimer::timeout, this, &MainWindow::syncExternalControlState);
+    m_controlStateTimer->setInterval(kControlStateIntervalMs);
+    initializeExternalControlState();
+    m_controlStateTimer->start();
     startTuyaIotProcess();
     updateIotStatus();
     m_iotStatusTimer->start();
@@ -782,6 +879,14 @@ void MainWindow::showBatchStatsPage()
     refreshBatchStatsData();
 }
 
+void MainWindow::showEnvironmentTrendPage()
+{
+    if (m_functionPages) {
+        m_functionPages->setCurrentIndex(7);
+    }
+    refreshEnvironmentTrendData();
+}
+
 void MainWindow::showVoicePromptPage()
 {
     if (m_functionPages) {
@@ -792,6 +897,184 @@ void MainWindow::showVoicePromptPage()
 void MainWindow::refreshSensorData()
 {
     updateSensorCards(m_sensorReader.readLatest());
+    if (m_functionPages && m_functionPages->currentIndex() == 7) {
+        refreshEnvironmentTrendData();
+    }
+}
+
+void MainWindow::selectEnvironmentMetric(int index)
+{
+    if (index < 0 || index >= environmentMetrics().size()) {
+        return;
+    }
+    m_environmentMetricIndex = index;
+    for (int i = 0; i < m_environmentMetricButtons.size(); ++i) {
+        m_environmentMetricButtons.at(i)->setChecked(i == index);
+    }
+    refreshEnvironmentTrendData();
+}
+
+void MainWindow::selectEnvironmentRange(int minutes)
+{
+    m_environmentRangeMinutes = qMax(0, minutes);
+    for (QPushButton *button : m_environmentRangeButtons) {
+        button->setChecked(button->property("rangeMinutes").toInt() == m_environmentRangeMinutes);
+    }
+    refreshEnvironmentTrendData();
+}
+
+void MainWindow::refreshEnvironmentTrendData()
+{
+    if (!m_environmentTrendChart || m_environmentMetricIndex < 0
+        || m_environmentMetricIndex >= environmentMetrics().size()) {
+        return;
+    }
+
+    const EnvironmentMetricDefinition &metric = environmentMetrics().at(m_environmentMetricIndex);
+    auto showEmptyState = [&](const QString &message) {
+        m_environmentTrendChart->setSeries({}, metric.label, metric.unit, metric.color);
+        if (m_environmentCurrentValueLabel) {
+            m_environmentCurrentValueLabel->setText("--");
+        }
+        if (m_environmentMinValueLabel) {
+            m_environmentMinValueLabel->setText("--");
+        }
+        if (m_environmentMaxValueLabel) {
+            m_environmentMaxValueLabel->setText("--");
+        }
+        if (m_environmentTrendStatusLabel) {
+            m_environmentTrendStatusLabel->setText(message);
+        }
+    };
+
+    QFile file(kSensorCsvFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        showEmptyState("状态：环境历史文件不可用");
+        return;
+    }
+
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    QString headerLine;
+    while (!stream.atEnd() && headerLine.isEmpty()) {
+        headerLine = stream.readLine().trimmed();
+    }
+    const QStringList headers = parseCsvLine(headerLine);
+    const int valueIndex = headers.indexOf(metric.key);
+    const int timestampIndex = headers.indexOf("timestamp");
+    if (valueIndex < 0 || timestampIndex < 0) {
+        showEmptyState("状态：环境历史字段不完整");
+        return;
+    }
+
+    QVector<EnvironmentTrendPoint> allPoints;
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        const QStringList fields = parseCsvLine(line);
+        if (valueIndex >= fields.size() || timestampIndex >= fields.size()) {
+            continue;
+        }
+
+        bool valueOk = false;
+        const double value = fields.at(valueIndex).trimmed().toDouble(&valueOk);
+        QDateTime timestamp = QDateTime::fromString(fields.at(timestampIndex).trimmed(), "yyyy-MM-dd HH:mm:ss");
+        if (!timestamp.isValid()) {
+            timestamp = QDateTime::fromString(fields.at(timestampIndex).trimmed(), Qt::ISODate);
+        }
+        if (!valueOk || !qIsFinite(value) || !timestamp.isValid()) {
+            continue;
+        }
+        allPoints.append({timestamp, value});
+    }
+
+    if (allPoints.isEmpty()) {
+        showEmptyState("状态：当前指标暂无有效采样");
+        return;
+    }
+
+    std::sort(allPoints.begin(), allPoints.end(), [](const EnvironmentTrendPoint &left,
+                                                      const EnvironmentTrendPoint &right) {
+        return left.timestamp < right.timestamp;
+    });
+
+    const QDateTime endTime = allPoints.last().timestamp;
+    const QDateTime startTime = m_environmentRangeMinutes > 0
+        ? endTime.addSecs(-m_environmentRangeMinutes * 60)
+        : QDateTime();
+    QVector<EnvironmentTrendPoint> filteredPoints;
+    for (const EnvironmentTrendPoint &point : allPoints) {
+        if (!startTime.isValid() || point.timestamp >= startTime) {
+            filteredPoints.append(point);
+        }
+    }
+    if (filteredPoints.isEmpty()) {
+        showEmptyState("状态：所选时间范围暂无采样");
+        return;
+    }
+
+    double minValue = filteredPoints.first().value;
+    double maxValue = minValue;
+    for (const EnvironmentTrendPoint &point : filteredPoints) {
+        minValue = qMin(minValue, point.value);
+        maxValue = qMax(maxValue, point.value);
+    }
+
+    QVector<EnvironmentTrendPoint> chartPoints;
+    const int maxChartPoints = 420;
+    if (filteredPoints.size() <= maxChartPoints) {
+        chartPoints = filteredPoints;
+    } else {
+        chartPoints.reserve(maxChartPoints);
+        chartPoints.append(filteredPoints.first());
+        const int interiorCount = filteredPoints.size() - 2;
+        const int bucketCount = (maxChartPoints - 2) / 2;
+        for (int bucket = 0; bucket < bucketCount; ++bucket) {
+            const int startIndex = 1 + static_cast<int>(
+                static_cast<qint64>(bucket) * interiorCount / bucketCount
+            );
+            const int endIndex = 1 + static_cast<int>(
+                static_cast<qint64>(bucket + 1) * interiorCount / bucketCount
+            );
+            if (endIndex <= startIndex) {
+                continue;
+            }
+
+            int minIndex = startIndex;
+            int maxIndex = startIndex;
+            for (int index = startIndex + 1; index < endIndex; ++index) {
+                if (filteredPoints.at(index).value < filteredPoints.at(minIndex).value) {
+                    minIndex = index;
+                }
+                if (filteredPoints.at(index).value > filteredPoints.at(maxIndex).value) {
+                    maxIndex = index;
+                }
+            }
+            if (minIndex == maxIndex) {
+                chartPoints.append(filteredPoints.at(minIndex));
+            } else if (minIndex < maxIndex) {
+                chartPoints.append(filteredPoints.at(minIndex));
+                chartPoints.append(filteredPoints.at(maxIndex));
+            } else {
+                chartPoints.append(filteredPoints.at(maxIndex));
+                chartPoints.append(filteredPoints.at(minIndex));
+            }
+        }
+        chartPoints.append(filteredPoints.last());
+    }
+
+    m_environmentTrendChart->setSeries(chartPoints, metric.label, metric.unit, metric.color);
+    m_environmentCurrentValueLabel->setText(formatEnvironmentValue(filteredPoints.last().value, metric));
+    m_environmentMinValueLabel->setText(formatEnvironmentValue(minValue, metric));
+    m_environmentMaxValueLabel->setText(formatEnvironmentValue(maxValue, metric));
+    m_environmentTrendStatusLabel->setText(
+        QString("%1 个采样点  %2 至 %3")
+            .arg(filteredPoints.size())
+            .arg(filteredPoints.first().timestamp.toString("MM-dd HH:mm"))
+            .arg(filteredPoints.last().timestamp.toString("MM-dd HH:mm"))
+    );
 }
 
 void MainWindow::refreshMangoQualityData()
@@ -872,7 +1155,7 @@ void MainWindow::refreshMangoQualityData()
     const QString rot = valueFor("rot_status");
     const QString rotScore = valueFor("rot_score", QString());
     const QString finalStatus = valueFor("final_status");
-    const QString mangoId = valueFor("mango_id", "--");
+    const QString mangoId = displayMangoId(valueFor("mango_id", "--"));
     const QString qualityGrade = valueFor("quality_grade", "--");
     const QString suggestedChannel = valueFor("suggested_channel", "--");
     const QString stableFrames = valueFor("stable_frames", QString());
@@ -1053,7 +1336,7 @@ void MainWindow::refreshBatchStatsData()
     const int reject = intFor("reject_count");
     const double saleable = doubleFor("saleable_ratio");
     const double rotRisk = doubleFor("rot_risk_ratio");
-    const QString latestId = valueFor("last_mango_id", "--");
+    const QString latestId = displayMangoId(valueFor("last_mango_id", "--"));
     const QString latestGrade = valueFor("last_quality_grade", "--");
     const QString latestChannel = valueFor("last_suggested_channel", "--");
     const QString latestMaturity = valueFor("last_maturity_label", "--");
@@ -1166,7 +1449,7 @@ void MainWindow::refreshMangoHistoryData()
         for (int col = 0; col < keys.size(); ++col) {
             QString text = columnValue(fields, keys.at(col));
             if (keys.at(col) == "mango_id" && text != "--") {
-                text = "#" + text;
+                text = "#" + displayMangoId(text);
             }
             QTableWidgetItem *item = new QTableWidgetItem(text);
             item->setTextAlignment(Qt::AlignCenter);
@@ -1182,9 +1465,9 @@ void MainWindow::refreshMangoHistoryData()
 
 void MainWindow::readSensorMessages()
 {
-    m_sensorProcess->readAllStandardError();
-    if (m_sensorStatusLabel) {
-        m_sensorStatusLabel->clear();
+    const QString message = compactProcessMessage(m_sensorProcess->readAllStandardError());
+    if (!message.isEmpty() && m_sensorStatusLabel) {
+        m_sensorStatusLabel->setText("环境采集：" + message);
     }
 }
 
@@ -1194,16 +1477,28 @@ void MainWindow::handleSensorFinished(int exitCode, QProcess::ExitStatus exitSta
         return;
     }
 
+    const QString detail = compactProcessMessage(m_sensorProcess->readAllStandardError());
     if (exitStatus == QProcess::CrashExit) {
-        m_sensorStatusLabel->setText("环境数据");
+        QString message = "环境采集程序异常退出";
+        if (!detail.isEmpty()) {
+            message += "\n" + detail;
+        }
+        m_sensorStatusLabel->setText(message);
     } else if (exitCode != 0) {
-        m_sensorStatusLabel->setText("环境数据");
+        QString message = QString("环境采集程序退出：%1").arg(exitCode);
+        if (!detail.isEmpty()) {
+            message += "\n" + detail;
+        }
+        m_sensorStatusLabel->setText(message);
     }
 }
 
 void MainWindow::readMangoQualityMessages()
 {
-    m_mangoQualityProcess->readAllStandardError();
+    const QString message = compactProcessMessage(m_mangoQualityProcess->readAllStandardError());
+    if (!message.isEmpty() && m_mangoQualityStatusLabel) {
+        m_mangoQualityStatusLabel->setText("状态：" + message);
+    }
 }
 
 void MainWindow::handleMangoQualityFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -1212,10 +1507,19 @@ void MainWindow::handleMangoQualityFinished(int exitCode, QProcess::ExitStatus e
         return;
     }
 
+    const QString detail = compactProcessMessage(m_mangoQualityProcess->readAllStandardError());
     if (exitStatus == QProcess::CrashExit) {
-        m_mangoQualityStatusLabel->setText("状态：三模态融合程序异常退出");
+        QString message = "状态：三模态融合程序异常退出";
+        if (!detail.isEmpty()) {
+            message += "\n" + detail;
+        }
+        m_mangoQualityStatusLabel->setText(message);
     } else if (exitCode != 0) {
-        m_mangoQualityStatusLabel->setText(QString("状态：三模态融合程序退出：%1").arg(exitCode));
+        QString message = QString("状态：三模态融合程序退出：%1").arg(exitCode);
+        if (!detail.isEmpty()) {
+            message += "\n" + detail;
+        }
+        m_mangoQualityStatusLabel->setText(message);
     }
 }
 
@@ -1271,9 +1575,14 @@ void MainWindow::readCameraFrames()
 
 void MainWindow::readCameraMessages()
 {
-    const QString message = QString::fromLocal8Bit(m_cameraProcess->readAllStandardError()).trimmed();
-    if (!message.isEmpty() && m_latestFrame.isNull()) {
-        setVideoMessage("检测程序启动中\n" + message.left(80));
+    const QString message = compactProcessMessage(m_cameraProcess->readAllStandardError(), 120);
+    if (message.isEmpty()) {
+        return;
+    }
+    if (m_latestFrame.isNull()) {
+        setVideoMessage("检测程序启动中\n" + message);
+    } else if (processMessageLooksLikeError(message)) {
+        setVideoMessage("检测程序错误\n" + message);
     }
 }
 
@@ -1283,10 +1592,19 @@ void MainWindow::handleCameraFinished(int exitCode, QProcess::ExitStatus exitSta
         return;
     }
 
+    const QString detail = compactProcessMessage(m_cameraProcess->readAllStandardError(), 120);
     if (exitStatus == QProcess::CrashExit) {
-        setVideoMessage("检测程序异常退出");
+        QString message = "检测程序异常退出";
+        if (!detail.isEmpty()) {
+            message += "\n" + detail;
+        }
+        setVideoMessage(message);
     } else if (exitCode != 0) {
-        setVideoMessage(QString("检测程序已退出\n退出码：%1").arg(exitCode));
+        QString message = QString("检测程序已退出\n退出码：%1").arg(exitCode);
+        if (!detail.isEmpty()) {
+            message += "\n" + detail;
+        }
+        setVideoMessage(message);
     } else {
         setVideoMessage("检测程序已停止");
     }
@@ -1349,6 +1667,96 @@ void MainWindow::handleTuyaIotFinished(int exitCode, QProcess::ExitStatus exitSt
     Q_UNUSED(exitStatus);
     m_tuyaIotStartedByQt = false;
     setIotStatusText("物联网未运行", "offline");
+}
+
+QJsonObject MainWindow::readExternalControlState() const
+{
+    QFile file(kControlStateJsonFile);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QJsonObject();
+    }
+
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        return QJsonObject();
+    }
+    return document.object();
+}
+
+void MainWindow::initializeExternalControlState()
+{
+    const QJsonObject state = readExternalControlState();
+    m_lastDetectRequestId = state.value("detect_request_id").toString();
+    m_lastDetectCommand = state.value("detect_cmd").toString();
+}
+
+void MainWindow::syncExternalControlState()
+{
+    const QJsonObject state = readExternalControlState();
+    const QString requestId = state.value("detect_request_id").toString().trimmed();
+    if (requestId.isEmpty() || requestId == m_lastDetectRequestId) {
+        return;
+    }
+
+    const QString command = state.value("detect_cmd").toString().trimmed().toLower();
+    m_lastDetectRequestId = requestId;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (command == m_lastDetectCommand && now - m_lastDetectCommandAtMs < 1500) {
+        return;
+    }
+    m_lastDetectCommand = command;
+    m_lastDetectCommandAtMs = now;
+
+    if (command == "start") {
+        m_shutdownDone = false;
+        startCameraProcess();
+        startMangoQualityProcess();
+        if (!m_mangoQualityTimer->isActive()) {
+            m_mangoQualityTimer->start();
+        }
+        if (m_mangoQualityStatusLabel) {
+            m_mangoQualityStatusLabel->setText("状态：远程检测已启动");
+        }
+        return;
+    }
+
+    if (command == "stop") {
+        stopCameraProcess();
+        stopMangoQualityProcess();
+        if (m_mangoQualityStatusLabel) {
+            m_mangoQualityStatusLabel->setText("状态：远程检测已停止");
+        }
+        return;
+    }
+
+    if (command == "snapshot") {
+        if (m_latestFrame.isNull()) {
+            if (m_mangoQualityStatusLabel) {
+                m_mangoQualityStatusLabel->setText("状态：抓拍失败，当前没有检测画面");
+            }
+            return;
+        }
+
+        QDir directory;
+        if (!directory.mkpath(kSnapshotDirectory)) {
+            if (m_mangoQualityStatusLabel) {
+                m_mangoQualityStatusLabel->setText("状态：抓拍目录创建失败");
+            }
+            return;
+        }
+
+        const QString fileName = QString("mango_%1.jpg")
+                                     .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss_zzz"));
+        const QString path = QDir(kSnapshotDirectory).filePath(fileName);
+        const bool saved = m_latestFrame.save(path, "JPG", 92);
+        if (m_mangoQualityStatusLabel) {
+            m_mangoQualityStatusLabel->setText(saved
+                ? "状态：抓拍已保存 " + fileName
+                : "状态：抓拍保存失败");
+        }
+    }
 }
 
 QWidget *MainWindow::createStartPage()
@@ -1580,6 +1988,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
     m_functionPages->addWidget(createBatchStatsPage());
     m_functionPages->addWidget(createServoControlPage());
     m_functionPages->addWidget(createVoicePromptPage());
+    m_functionPages->addWidget(createEnvironmentTrendPage());
 
     layout->addWidget(title);
     layout->addWidget(m_functionPages, 1);
@@ -1639,8 +2048,14 @@ QWidget *MainWindow::createFunctionHomePage()
     historyButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(historyButton, &QPushButton::clicked, this, &MainWindow::showMangoHistoryPage);
 
+    QPushButton *environmentTrendButton = new QPushButton("环境趋势");
+    environmentTrendButton->setObjectName("featureButton_orange");
+    environmentTrendButton->setFixedHeight(58);
+    environmentTrendButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(environmentTrendButton, &QPushButton::clicked, this, &MainWindow::showEnvironmentTrendPage);
+
     layout->addWidget(makeFunctionSection("实时使用", {conveyorButton, ledButton, servoButton}));
-    layout->addWidget(makeFunctionSection("数据查看", {mangoButton, batchButton, voiceButton, historyButton}));
+    layout->addWidget(makeFunctionGridSection("数据查看", {mangoButton, batchButton, environmentTrendButton, voiceButton, historyButton}, 2));
     layout->addStretch(1);
     return page;
 }
@@ -2014,19 +2429,19 @@ QWidget *MainWindow::createServoControlPage()
     QHBoxLayout *positionLayout = new QHBoxLayout;
     positionLayout->setSpacing(1);
 
-    m_servoPosition1Button = new QPushButton("1号\n-45度");
+    m_servoPosition1Button = new QPushButton("1号\n左位");
     m_servoPosition1Button->setObjectName("segmentLeft");
     m_servoPosition1Button->setCheckable(true);
     m_servoPosition1Button->setMinimumHeight(74);
     connect(m_servoPosition1Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition1);
 
-    m_servoPosition2Button = new QPushButton("2号\n0度");
+    m_servoPosition2Button = new QPushButton("2号\n中位");
     m_servoPosition2Button->setObjectName("segmentMiddle");
     m_servoPosition2Button->setCheckable(true);
     m_servoPosition2Button->setMinimumHeight(74);
     connect(m_servoPosition2Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition2);
 
-    m_servoPosition3Button = new QPushButton("3号\n45度");
+    m_servoPosition3Button = new QPushButton("3号\n右位");
     m_servoPosition3Button->setObjectName("segmentRight");
     m_servoPosition3Button->setCheckable(true);
     m_servoPosition3Button->setMinimumHeight(74);
@@ -2135,6 +2550,105 @@ QWidget *MainWindow::createBatchStatsPage()
     return page;
 }
 
+QWidget *MainWindow::createEnvironmentTrendPage()
+{
+    QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+
+    QPushButton *backButton = new QPushButton("返回功能区");
+    backButton->setObjectName("secondaryButton");
+    backButton->setFixedHeight(38);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
+
+    QLabel *title = new QLabel("环境趋势");
+    title->setObjectName("controlTitle");
+
+    QGridLayout *metricLayout = new QGridLayout;
+    metricLayout->setContentsMargins(0, 0, 0, 0);
+    metricLayout->setHorizontalSpacing(4);
+    metricLayout->setVerticalSpacing(4);
+    for (int i = 0; i < environmentMetrics().size(); ++i) {
+        QPushButton *button = new QPushButton(environmentMetrics().at(i).label);
+        button->setObjectName("trendSegment");
+        button->setCheckable(true);
+        button->setFixedHeight(32);
+        connect(button, &QPushButton::clicked, this, [this, i]() { selectEnvironmentMetric(i); });
+        m_environmentMetricButtons.append(button);
+        metricLayout->addWidget(button, i / 3, i % 3);
+    }
+
+    QHBoxLayout *summaryLayout = new QHBoxLayout;
+    summaryLayout->setContentsMargins(0, 0, 0, 0);
+    summaryLayout->setSpacing(5);
+    auto makeTrendStat = [&](const QString &name, QLabel **valueLabel) {
+        QFrame *frame = new QFrame;
+        frame->setObjectName("trendStat");
+        frame->setFixedHeight(56);
+        QVBoxLayout *frameLayout = new QVBoxLayout(frame);
+        frameLayout->setContentsMargins(7, 5, 7, 5);
+        frameLayout->setSpacing(1);
+        QLabel *nameLabel = new QLabel(name);
+        nameLabel->setObjectName("trendStatName");
+        QLabel *value = new QLabel("--");
+        value->setObjectName("trendStatValue");
+        value->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        frameLayout->addWidget(nameLabel);
+        frameLayout->addWidget(value);
+        *valueLabel = value;
+        return frame;
+    };
+    summaryLayout->addWidget(makeTrendStat("当前", &m_environmentCurrentValueLabel));
+    summaryLayout->addWidget(makeTrendStat("最低", &m_environmentMinValueLabel));
+    summaryLayout->addWidget(makeTrendStat("最高", &m_environmentMaxValueLabel));
+
+    m_environmentTrendChart = new EnvironmentTrendChartWidget;
+
+    QHBoxLayout *rangeLayout = new QHBoxLayout;
+    rangeLayout->setContentsMargins(0, 0, 0, 0);
+    rangeLayout->setSpacing(1);
+    const QList<QPair<QString, int>> ranges = {
+        {"1小时", 60},
+        {"6小时", 360},
+        {"24小时", 1440},
+        {"全部", 0}
+    };
+    for (const QPair<QString, int> &range : ranges) {
+        QPushButton *button = new QPushButton(range.first);
+        button->setObjectName("trendRange");
+        button->setCheckable(true);
+        button->setProperty("rangeMinutes", range.second);
+        button->setFixedHeight(30);
+        connect(button, &QPushButton::clicked, this, [this, range]() { selectEnvironmentRange(range.second); });
+        m_environmentRangeButtons.append(button);
+        rangeLayout->addWidget(button, 1);
+    }
+
+    m_environmentTrendStatusLabel = new QLabel("状态：等待环境历史数据");
+    m_environmentTrendStatusLabel->setObjectName("trendStatus");
+    m_environmentTrendStatusLabel->setWordWrap(true);
+    m_environmentTrendStatusLabel->setMinimumHeight(30);
+
+    if (!m_environmentMetricButtons.isEmpty()) {
+        m_environmentMetricButtons.first()->setChecked(true);
+    }
+    if (!m_environmentRangeButtons.isEmpty()) {
+        m_environmentRangeButtons.first()->setChecked(true);
+    }
+
+    layout->addWidget(backButton);
+    layout->addWidget(title);
+    layout->addLayout(metricLayout);
+    layout->addLayout(summaryLayout);
+    layout->addWidget(m_environmentTrendChart, 1);
+    layout->addLayout(rangeLayout);
+    layout->addWidget(m_environmentTrendStatusLabel);
+    return page;
+}
+
 QWidget *MainWindow::createVoicePromptPage()
 {
     QWidget *page = new QWidget;
@@ -2236,6 +2750,34 @@ QFrame *MainWindow::makeFunctionSection(const QString &title, const QList<QPushB
         layout->addWidget(button);
     }
 
+    return section;
+}
+
+QFrame *MainWindow::makeFunctionGridSection(const QString &title,
+                                            const QList<QPushButton *> &buttons,
+                                            int columns)
+{
+    QFrame *section = new QFrame;
+    section->setObjectName("functionSection");
+    section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    QVBoxLayout *layout = new QVBoxLayout(section);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
+
+    QLabel *titleLabel = new QLabel(title);
+    titleLabel->setObjectName("functionSectionTitle");
+    layout->addWidget(titleLabel);
+
+    QGridLayout *grid = new QGridLayout;
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(6);
+    const int columnCount = qMax(1, columns);
+    for (int i = 0; i < buttons.size(); ++i) {
+        grid->addWidget(buttons.at(i), i / columnCount, i % columnCount);
+    }
+    layout->addLayout(grid);
     return section;
 }
 
@@ -2596,6 +3138,39 @@ void MainWindow::applyGlobalStyle()
         "  color: #26352A;"
         "  font-size: 22px;"
         "  font-weight: 700;"
+        "}"
+        "QPushButton#trendSegment, QPushButton#trendRange {"
+        "  background: #FFFFFF;"
+        "  color: #45505A;"
+        "  border: 1px solid #C8D8D0;"
+        "  border-radius: 5px;"
+        "  font-size: 14px;"
+        "  font-weight: 700;"
+        "  padding: 4px;"
+        "}"
+        "QPushButton#trendSegment:checked, QPushButton#trendRange:checked {"
+        "  background: #2F6B4F;"
+        "  color: #FFFFFF;"
+        "  border-color: #2F6B4F;"
+        "}"
+        "QFrame#trendStat {"
+        "  background: #F7F8F4;"
+        "  border: 1px solid #D8DED3;"
+        "  border-radius: 6px;"
+        "}"
+        "QLabel#trendStatName {"
+        "  color: #697468;"
+        "  font-size: 12px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#trendStatValue {"
+        "  color: #26352A;"
+        "  font-size: 16px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#trendStatus {"
+        "  color: #697468;"
+        "  font-size: 12px;"
         "}"
         "QWidget#chartCanvas {"
         "  background: #FFFFFF;"
@@ -3212,7 +3787,7 @@ void MainWindow::moveServoToPosition1()
     if (m_servoPosition3Button) {
         m_servoPosition3Button->setChecked(false);
     }
-    runServoCommand("1", "1号 -45度");
+    runServoCommand("1", "1号 左位");
 }
 
 void MainWindow::moveServoToPosition2()
@@ -3226,7 +3801,7 @@ void MainWindow::moveServoToPosition2()
     if (m_servoPosition3Button) {
         m_servoPosition3Button->setChecked(false);
     }
-    runServoCommand("2", "2号 0度");
+    runServoCommand("2", "2号 中位");
 }
 
 void MainWindow::moveServoToPosition3()
@@ -3240,7 +3815,7 @@ void MainWindow::moveServoToPosition3()
     if (m_servoPosition3Button) {
         m_servoPosition3Button->setChecked(true);
     }
-    runServoCommand("3", "3号 45度");
+    runServoCommand("3", "3号 右位");
 }
 
 void MainWindow::runVoicePromptCommand(const QString &target, const QString &label)
@@ -3522,27 +4097,25 @@ int MainWindow::readLatestLightLux() const
 
     QTextStream stream(&file);
     stream.setCodec("UTF-8");
-    QString headerLine;
-    QString lastLine;
+    QStringList rows;
     while (!stream.atEnd()) {
         const QString line = stream.readLine().trimmed();
         if (line.isEmpty()) {
             continue;
         }
-        if (headerLine.isEmpty()) {
-            headerLine = line;
-        } else {
-            lastLine = line;
-        }
+        rows.append(line);
     }
 
-    if (headerLine.isEmpty() || lastLine.isEmpty()) {
+    if (rows.isEmpty()) {
         return -1;
     }
 
-    const QStringList headers = parseCsvLine(headerLine);
-    const QStringList fields = parseCsvLine(lastLine);
-    const int index = headers.indexOf("light_lux");
+    const QStringList first = parseCsvLine(rows.first());
+    const QStringList fields = parseCsvLine(rows.last());
+    int index = rows.size() >= 2 ? first.indexOf("light_lux") : -1;
+    if (index < 0 && fields.size() > 3) {
+        index = 3;
+    }
     if (index < 0 || index >= fields.size()) {
         return -1;
     }

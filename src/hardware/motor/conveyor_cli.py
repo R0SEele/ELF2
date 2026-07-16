@@ -61,7 +61,11 @@ def _speed_ms_to_rpm(speed_ms, conveyor_cfg, min_speed_ms, max_speed_ms):
         diameter = float(conveyor_cfg["roller_diameter_m"])
         if diameter <= 0:
             raise ConveyorCommandError("roller_diameter_m must be > 0")
-        return speed_ms * 60.0 / (3.141592653589793 * diameter)
+        drive_ratio = float(conveyor_cfg.get("drive_ratio", conveyor_cfg.get("motor_to_roller_ratio", 1.0)))
+        if drive_ratio <= 0:
+            raise ConveyorCommandError("drive_ratio must be > 0")
+        roller_rpm = speed_ms * 60.0 / (3.141592653589793 * diameter)
+        return roller_rpm * drive_ratio
 
     min_rpm = float(conveyor_cfg.get("min_speed_rpm", 10.0))
     max_rpm = float(conveyor_cfg.get("max_speed_rpm", 2000.0))
@@ -144,7 +148,7 @@ def main():
                 sync=sync,
                 wait_ack=wait_ack,
             )
-            print(f"{args.command} speed={speed_ms:.1f}m/s rpm={speed_rpm:.1f}")
+            print(f"{args.command} speed={speed_ms:.2f}m/s rpm={speed_rpm:.1f}")
             return 0
         finally:
             ctrl.close()

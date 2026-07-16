@@ -11,4 +11,6 @@ __pycache__/
 datas/csv/test.csv
 datas/csv/*debug*.csv
 datas/csv/tuya_proxy_control_state.json
+datas/csv/mango_batch_state.json
+datas/snapshots/
 config/tuya_cloud_secrets.json

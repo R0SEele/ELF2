@@ -1,6 +1,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "environmenttrendchart.h"
 #include "sensordatareader.h"
 
 #include <QColor>
@@ -13,6 +14,7 @@
 #include <QPixmap>
 #include <QProcess>
 #include <QPushButton>
+#include <QJsonObject>
 #include <QResizeEvent>
 #include <QSlider>
 #include <QStackedWidget>
@@ -144,11 +146,13 @@ private slots:
     void showMangoQualityPage();
     void showServoControlPage();
     void showBatchStatsPage();
+    void showEnvironmentTrendPage();
     void showMangoHistoryPage();
     void showVoicePromptPage();
     void refreshSensorData();
     void refreshMangoQualityData();
     void refreshBatchStatsData();
+    void refreshEnvironmentTrendData();
     void refreshMangoHistoryData();
     void readSensorMessages();
     void handleSensorFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -164,6 +168,7 @@ private slots:
     void updateIotStatus();
     void readTuyaIotMessages();
     void handleTuyaIotFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void syncExternalControlState();
     void updateConveyorSpeedLabel(int value);
     void applyConveyorSpeed();
     void startConveyorForward();
@@ -192,13 +197,17 @@ private:
     QWidget *createMangoQualityPage();
     QWidget *createServoControlPage();
     QWidget *createBatchStatsPage();
+    QWidget *createEnvironmentTrendPage();
     QWidget *createVoicePromptPage();
     QLabel *makeSensorNameLabel(const QString &text);
     QLabel *makeSensorValueLabel();
     QFrame *makeMetricCard(const QString &name, QLabel **valueLabel, const QString &accentName = QString());
     QFrame *makeFunctionSection(const QString &title, const QList<QPushButton *> &buttons);
+    QFrame *makeFunctionGridSection(const QString &title, const QList<QPushButton *> &buttons, int columns);
     void applyGlobalStyle();
     void updateSensorCards(const SensorSnapshot &snapshot);
+    void selectEnvironmentMetric(int index);
+    void selectEnvironmentRange(int minutes);
     void startSensorProcess();
     void stopSensorProcess();
     void startMangoQualityProcess();
@@ -209,6 +218,8 @@ private:
     void stopTuyaIotProcess();
     bool isTuyaIotProcessRunning() const;
     void setIotStatusText(const QString &text, const QString &state);
+    void initializeExternalControlState();
+    QJsonObject readExternalControlState() const;
     void processCameraBuffer();
     void showCameraFrame(const QByteArray &jpegData);
     void rescaleCameraFrame();
@@ -244,11 +255,15 @@ private:
     QProcess *m_motorCommandProcess;
     QProcess *m_tuyaIotProcess;
     QTimer *m_iotStatusTimer;
+    QTimer *m_controlStateTimer;
     QNetworkAccessManager *m_iotNetworkManager;
     QNetworkReply *m_iotNetworkReply;
     QLabel *m_networkStatusLabel;
     QByteArray m_cameraBuffer;
     QPixmap m_latestFrame;
+    QString m_lastDetectRequestId;
+    QString m_lastDetectCommand;
+    qint64 m_lastDetectCommandAtMs;
     SensorDataReader m_sensorReader;
     QSlider *m_conveyorSpeedSlider;
     QLabel *m_conveyorSpeedValueLabel;
@@ -292,6 +307,15 @@ private:
     DonutChartWidget *m_batchMaturityChart;
     BarChartWidget *m_batchGradeChart;
     BarChartWidget *m_batchChannelChart;
+    EnvironmentTrendChartWidget *m_environmentTrendChart;
+    QLabel *m_environmentCurrentValueLabel;
+    QLabel *m_environmentMinValueLabel;
+    QLabel *m_environmentMaxValueLabel;
+    QLabel *m_environmentTrendStatusLabel;
+    QVector<QPushButton *> m_environmentMetricButtons;
+    QVector<QPushButton *> m_environmentRangeButtons;
+    int m_environmentMetricIndex;
+    int m_environmentRangeMinutes;
     QTableWidget *m_historyTable;
     QLabel *m_historySummaryLabel;
     QLabel *m_voicePromptStatusLabel;

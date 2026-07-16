@@ -1,8 +1,10 @@
 import argparse
+import json
 import os
 import signal
 import sys
 import time
+from pathlib import Path
 
 try:
     from .auto_sorter import AutoSorter
@@ -13,12 +15,15 @@ try:
     from .fusion import (
         DEFAULT_BATCH_CSV,
         DEFAULT_BATCH_JSON,
+        DEFAULT_BATCH_STATE_JSON,
         DEFAULT_HISTORY_CSV,
         DEFAULT_OUTPUT_CSV,
         DEFAULT_OUTPUT_JSON,
         DEFAULT_OBJECT_CSV,
         DEFAULT_SPECTRUM_CSV,
         DEFAULT_VISION_CSV,
+        SPECTRUM_STALE_SECONDS,
+        VISION_STALE_SECONDS,
         BatchAccumulator,
         assess_mango_quality,
         read_latest_object,
@@ -34,12 +39,15 @@ except ImportError:
     from fusion import (
         DEFAULT_BATCH_CSV,
         DEFAULT_BATCH_JSON,
+        DEFAULT_BATCH_STATE_JSON,
         DEFAULT_HISTORY_CSV,
         DEFAULT_OUTPUT_CSV,
         DEFAULT_OUTPUT_JSON,
         DEFAULT_OBJECT_CSV,
         DEFAULT_SPECTRUM_CSV,
         DEFAULT_VISION_CSV,
+        SPECTRUM_STALE_SECONDS,
+        VISION_STALE_SECONDS,
         BatchAccumulator,
         assess_mango_quality,
         read_latest_object,
@@ -54,6 +62,7 @@ except ImportError:
 
 
 RUNNING = True
+DEFAULT_CONTROL_STATE_JSON = Path("/home/elf/projects/datas/csv/tuya_proxy_control_state.json")
 
 
 def handle_signal(_signum, _frame):
@@ -86,10 +95,15 @@ def parse_args():
     parser.add_argument("--output-json", default=str(DEFAULT_OUTPUT_JSON), help="Realtime assessment JSON")
     parser.add_argument("--batch-csv", default=str(DEFAULT_BATCH_CSV), help="Batch summary CSV")
     parser.add_argument("--batch-json", default=str(DEFAULT_BATCH_JSON), help="Batch summary JSON")
+    parser.add_argument("--batch-state-json", default=str(DEFAULT_BATCH_STATE_JSON), help="Persistent batch state JSON")
     parser.add_argument("--history-csv", default=str(DEFAULT_HISTORY_CSV), help="Deduplicated mango quality history CSV")
     parser.add_argument("--auto-sort", action="store_true", default=True, help="Enable automatic sorter servo control")
     parser.add_argument("--no-auto-sort", dest="auto_sort", action="store_false", help="Disable automatic sorter servo control")
-    parser.add_argument("--batch-id", default="", help="Optional batch identifier")
+    parser.add_argument("--control-state-json", default=str(DEFAULT_CONTROL_STATE_JSON), help="Tuya/local control state JSON")
+    parser.add_argument("--batch-id", default=None, help="Optional batch identifier")
+    parser.add_argument("--reset-batch", action="store_true", help="Start a new empty batch instead of resuming saved state")
+    parser.add_argument("--vision-stale-seconds", type=float, default=VISION_STALE_SECONDS, help="Ignore fallback vision rows older than this")
+    parser.add_argument("--spectrum-stale-seconds", type=float, default=SPECTRUM_STALE_SECONDS, help="Ignore spectrum rows older than this")
     parser.add_argument("--interval", type=float, default=0.5, help="Watch interval in seconds")
     parser.add_argument("--once", action="store_true", help="Run one assessment and exit")
     parser.add_argument("--no-json", action="store_true", help="Do not write JSON output")
@@ -97,21 +111,42 @@ def parse_args():
     return parser.parse_args()
 
 
+def read_auto_sort_enabled(path):
+    path = Path(path)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError):
+        return True
+    return bool(data.get("auto_sort_enable", True))
+
+
 def run_once(args, batch=None, sorter=None):
-    vision = read_latest_object(args.object_csv) or read_latest_vision(args.vision_csv)
-    spectrum = read_latest_spectrum(args.spectrum_csv)
+    vision = read_latest_object(args.object_csv) or read_latest_vision(
+        args.vision_csv,
+        max_age_s=args.vision_stale_seconds,
+    )
+    spectrum = read_latest_spectrum(args.spectrum_csv, max_age_s=args.spectrum_stale_seconds)
     assessment = assess_mango_quality(vision, spectrum)
+    if batch is not None:
+        batch.assign_mango_id(assessment)
     write_assessment_csv(args.output_csv, assessment)
-    write_assessment_history_csv(args.history_csv, assessment)
     if not args.no_json:
         write_assessment_json(args.output_json, assessment)
+
+    is_new_batch_object = True
     if batch is not None:
-        batch.add(assessment)
+        is_new_batch_object = batch.add(assessment)
         summary = batch.summary()
         write_batch_summary_csv(args.batch_csv, summary)
         if not args.no_json:
             write_batch_summary_json(args.batch_json, summary)
-    if sorter is not None:
+        if is_new_batch_object:
+            batch.save(args.batch_state_json)
+
+    if is_new_batch_object:
+        write_assessment_history_csv(args.history_csv, assessment)
+    if sorter is not None and is_new_batch_object and read_auto_sort_enabled(args.control_state_json):
         sorter.sort_once(assessment)
     return assessment
 
@@ -124,8 +159,17 @@ def main():
     if args.interval < 0:
         print("interval must be >= 0", file=sys.stderr)
         return 2
+    if args.vision_stale_seconds < 0 or args.spectrum_stale_seconds < 0:
+        print("stale seconds must be >= 0", file=sys.stderr)
+        return 2
 
-    batch = BatchAccumulator(args.batch_id or None)
+    batch_id = str(args.batch_id).strip() if args.batch_id else None
+    if args.reset_batch:
+        batch = BatchAccumulator(batch_id)
+        batch.save(args.batch_state_json)
+    else:
+        batch = BatchAccumulator.load(args.batch_state_json, batch_id=batch_id)
+        batch.save(args.batch_state_json)
     sorter = AutoSorter() if args.auto_sort else None
     write_batch_summary_csv(args.batch_csv, batch.summary())
     if not args.no_json:

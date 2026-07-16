@@ -101,11 +101,29 @@ def _build_row(readings, scd40_cache=None, scd40_cache_max_age_s=20.0):
 
 
 def _ensure_header(csv_path):
-    if csv_path.exists() and csv_path.stat().st_size > 0:
-        return
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+    def write_header(handle):
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
+
+    if not csv_path.exists() or csv_path.stat().st_size == 0:
+        with csv_path.open("w", newline="", encoding="utf-8") as handle:
+            write_header(handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        return
+
+    with csv_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        first_row = next(reader, [])
+
+    normalized = [field.strip().lstrip("\ufeff") for field in first_row]
+    if normalized == CSV_FIELDS:
+        return
+
+    existing = csv_path.read_text(encoding="utf-8")
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        write_header(handle)
+        handle.write(existing)
         handle.flush()
         os.fsync(handle.fileno())
 

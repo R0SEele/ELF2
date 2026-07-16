@@ -17,8 +17,11 @@ DEFAULT_OUTPUT_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_quality_realtime.cs
 DEFAULT_OUTPUT_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_quality_realtime.json"
 DEFAULT_BATCH_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_batch_summary.csv"
 DEFAULT_BATCH_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_batch_summary.json"
+DEFAULT_BATCH_STATE_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_batch_state.json"
 DEFAULT_HISTORY_CSV = PROJECT_ROOT / "datas" / "csv" / "mango_quality_history.csv"
 OBJECT_STALE_SECONDS = 20.0
+VISION_STALE_SECONDS = 5.0
+SPECTRUM_STALE_SECONDS = 30.0
 
 
 MANGO_LABELS = {
@@ -304,10 +307,16 @@ def read_csv_rows(path):
         return [row for row in csv.DictReader(handle)]
 
 
-def read_latest_vision(path=DEFAULT_VISION_CSV):
+def row_timestamp(row):
+    return str(row.get("timestamp") or row.get("timestamp_iso") or "").strip()
+
+
+def read_latest_vision(path=DEFAULT_VISION_CSV, max_age_s=None):
     rows = read_csv_rows(path)
     candidates = []
     for row in rows:
+        if max_age_s is not None and not is_recent_timestamp(row_timestamp(row), max_age_s):
+            continue
         label_info = normalize_label(row.get("label"))
         if not label_info:
             continue
@@ -322,7 +331,7 @@ def read_latest_vision(path=DEFAULT_VISION_CSV):
     _rank, row, label_info = max(candidates, key=lambda item: item[0])
     label_key, _label_score, _label_zh = label_info
     return VisionFeatures(
-        timestamp=str(row.get("timestamp", "")),
+        timestamp=row_timestamp(row),
         mango_id=str(row.get("mango_id", "")),
         stable_frames=int(safe_float(row.get("stable_frames"), 0.0) or 0),
         consistency_label=str(row.get("consistency_label", "")),
@@ -346,12 +355,7 @@ def read_latest_vision(path=DEFAULT_VISION_CSV):
 
 
 def read_latest_object(path=DEFAULT_OBJECT_CSV):
-    vision = read_latest_vision(path)
-    if vision is None:
-        return None
-    if not is_recent_timestamp(vision.timestamp, OBJECT_STALE_SECONDS):
-        return None
-    return vision
+    return read_latest_vision(path, max_age_s=OBJECT_STALE_SECONDS)
 
 
 def _first_existing_spectrum_path(path):
@@ -365,12 +369,16 @@ def _first_existing_spectrum_path(path):
     return explicit or DEFAULT_SPECTRUM_CSV
 
 
-def read_latest_spectrum(path=DEFAULT_SPECTRUM_CSV):
+def read_latest_spectrum(path=DEFAULT_SPECTRUM_CSV, max_age_s=None):
     rows = read_csv_rows(_first_existing_spectrum_path(path))
     if not rows:
         return None
 
     row = rows[-1]
+    timestamp = row_timestamp(row)
+    if max_age_s is not None and not is_recent_timestamp(timestamp, max_age_s):
+        return None
+
     f4 = safe_float(row.get("f4_515"))
     f5 = safe_float(row.get("f5_555"))
     f6 = safe_float(row.get("f6_590"))
@@ -404,7 +412,7 @@ def read_latest_spectrum(path=DEFAULT_SPECTRUM_CSV):
         nir_ratio = safe_div(nir, max(clear, 1.0) if not is_nan(clear) else math.nan)
 
     return SpectrumFeatures(
-        timestamp=str(row.get("timestamp", "")),
+        timestamp=timestamp,
         f1_415=safe_float(row.get("f1_415")),
         f2_445=safe_float(row.get("f2_445")),
         f3_480=safe_float(row.get("f3_480")),
@@ -447,6 +455,15 @@ def parse_timestamp(value):
     text = str(value or "").strip()
     if not text:
         return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        stamp = datetime.fromisoformat(text)
+        if stamp.tzinfo is not None:
+            stamp = stamp.astimezone().replace(tzinfo=None)
+        return stamp
+    except ValueError:
+        pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
         try:
             return datetime.strptime(text, fmt)
@@ -842,10 +859,108 @@ def _is_saleable(assessment):
 
 
 class BatchAccumulator:
-    def __init__(self, batch_id=None):
+    def __init__(self, batch_id=None, assessments=None, source_ids=None):
         self.batch_id = batch_id or time.strftime("%Y%m%d_%H%M%S")
         self.seen_ids = set()
         self.assessments = []
+        self.source_ids = dict(source_ids or {})
+        self.next_mango_number = 1
+        for assessment in assessments or []:
+            if assessment_has_object(assessment):
+                mango_id = str(assessment.mango_id).strip()
+                self.seen_ids.add(mango_id)
+                self.assessments.append(assessment)
+                if mango_id.isdigit():
+                    self.next_mango_number = max(self.next_mango_number, int(mango_id) + 1)
+
+    @staticmethod
+    def _legacy_source_id(mango_id):
+        text = str(mango_id or "").strip()
+        tail = text.rsplit("-", 1)[-1]
+        return tail if tail.isdigit() else text
+
+    @classmethod
+    def _source_key(cls, assessment, mango_id=None):
+        source_id = cls._legacy_source_id(
+            assessment.mango_id if mango_id is None else mango_id
+        )
+        timestamp = str(assessment.vision_timestamp or assessment.timestamp or "").strip()
+        return "{}|{}".format(timestamp, source_id)
+
+    def assign_mango_id(self, assessment):
+        if not assessment_has_object(assessment):
+            return ""
+
+        raw_id = str(assessment.mango_id).strip()
+        source_key = self._source_key(assessment, raw_id)
+        mango_id = self.source_ids.get(source_key)
+        if not mango_id:
+            mango_id = str(self.next_mango_number)
+            self.next_mango_number += 1
+            self.source_ids[source_key] = mango_id
+
+        assessment.mango_id = mango_id
+        old_reason = "芒果#{}连续".format(raw_id)
+        if old_reason in assessment.reason:
+            assessment.reason = assessment.reason.replace(
+                old_reason,
+                "芒果#{}连续".format(mango_id),
+                1,
+            )
+        return mango_id
+
+    @classmethod
+    def load(cls, path, batch_id=None):
+        path = Path(path)
+        if not path.exists() or path.stat().st_size == 0:
+            return cls(batch_id)
+
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return cls(batch_id)
+
+        saved_batch_id = str(data.get("batch_id") or "").strip()
+        if batch_id and saved_batch_id and saved_batch_id != str(batch_id):
+            return cls(batch_id)
+
+        assessments = []
+        source_ids = data.get("source_ids")
+        if not isinstance(source_ids, dict):
+            source_ids = {}
+        migrate_legacy_ids = not source_ids
+        for item in data.get("assessments") or []:
+            if not isinstance(item, dict):
+                continue
+            payload = {field_name: item.get(field_name, "") for field_name in QUALITY_FIELDS}
+            assessment = QualityAssessment(**payload)
+            if migrate_legacy_ids and assessment_has_object(assessment):
+                legacy_id = str(assessment.mango_id).strip()
+                display_id = str(len(assessments) + 1)
+                source_ids[cls._source_key(assessment, legacy_id)] = display_id
+                assessment.mango_id = display_id
+            assessments.append(assessment)
+        return cls(batch_id or saved_batch_id or None, assessments, source_ids)
+
+    def save(self, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "batch_id": self.batch_id,
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "seen_ids": sorted(self.seen_ids),
+            "source_ids": self.source_ids,
+            "assessments": [
+                {key: json_safe_value(value) for key, value in asdict(assessment).items()}
+                for assessment in self.assessments
+            ],
+        }
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        with temp_path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2, allow_nan=False)
+            handle.write("\n")
+        os.replace(temp_path, path)
 
     def add(self, assessment):
         if not assessment_has_object(assessment):
@@ -968,7 +1083,15 @@ def write_assessment_history_csv(path, assessment, max_rows=200):
             rows = [row for row in csv.DictReader(handle)]
 
     mango_id = str(assessment.mango_id).strip()
-    rows = [row for row in rows if str(row.get("mango_id", "")).strip() != mango_id]
+    timestamp = str(assessment.timestamp or "").strip()
+    rows = [
+        row
+        for row in rows
+        if not (
+            str(row.get("mango_id", "")).strip() == mango_id
+            and str(row.get("timestamp", "")).strip() == timestamp
+        )
+    ]
     rows.append(assessment_to_history_row(assessment))
     rows = rows[-max(1, int(max_rows)):]
 

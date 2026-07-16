@@ -132,7 +132,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "position",
         choices=("1", "2", "3", "left", "center", "right", "-45", "0", "45"),
-        help="Sorter position: 1=-45deg, 2=0deg, 3=45deg.",
+        help="Sorter position mapped by servo.yaml: 1/left, 2/center, 3/right.",
     )
     parser.add_argument(
         "--config",
@@ -145,9 +145,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Do not wait for the configured settle time after moving.",
     )
     parser.add_argument(
+        "--hold-after-move",
+        action="store_true",
+        help="Keep PWM enabled after the move so the servo actively holds position.",
+    )
+    parser.add_argument(
         "--disable-after-move",
         action="store_true",
-        help="Disable PWM after the move. By default PWM stays enabled so the servo holds position.",
+        help="Deprecated compatibility flag. PWM is disabled after moves by default.",
     )
     return parser.parse_args(argv)
 
@@ -165,7 +170,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         if servo is not None:
-            servo.close(disable=args.disable_after_move)
+            disable_after_move = args.disable_after_move or not args.hold_after_move
+            servo.close(disable=disable_after_move)
 
 
 if __name__ == "__main__":

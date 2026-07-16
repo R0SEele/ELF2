@@ -8,7 +8,7 @@ yolo11:
   # Model input image size in pixels. / 模型输入图像尺寸，单位为像素。
   img_size: 640
   # Detection confidence threshold. / 检测置信度阈值。
-  conf: 0.7
+  conf: 0.5
   # Non-maximum suppression IoU threshold. / 非极大值抑制 IoU 阈值。
   iou: 0.45
   # Number of RKNNLite worker instances. / RKNNLite 推理实例数量。

@@ -33,6 +33,38 @@ bool isLikelyKeyValueName(const QString &name)
     name.trimmed().toDouble(&numeric);
     return !name.trimmed().isEmpty() && !numeric;
 }
+
+const QStringList &sensorCsvFields()
+{
+    static const QStringList fields = {
+        "temperature_c",
+        "humidity_rh",
+        "co2_ppm",
+        "light_lux",
+        "air_quality_ppm",
+        "env_status",
+        "timestamp",
+        "sensor_errors"
+    };
+
+    return fields;
+}
+
+bool isStandardCsvHeader(const QStringList &fields)
+{
+    const QStringList standardFields = sensorCsvFields();
+    if (fields.size() < standardFields.size()) {
+        return false;
+    }
+
+    for (int i = 0; i < standardFields.size(); ++i) {
+        if (fields.at(i).trimmed().toLower() != standardFields.at(i)) {
+            return false;
+        }
+    }
+
+    return true;
+}
 }
 
 SensorDataReader::SensorDataReader(const QString &csvFilePath)
@@ -83,6 +115,7 @@ SensorSnapshot SensorDataReader::readCsv(const QString &filePath) const
     const QStringList last = parseCsvLine(rows.last());
 
     if (rows.size() >= 2 && first.size() == last.size() && looksLikeHeader(first)) {
+        const int valueCountBefore = snapshot.values.size();
         for (int i = 0; i < first.size(); ++i) {
             const QString key = first.at(i).trimmed();
             const QString value = last.at(i).trimmed();
@@ -92,7 +125,27 @@ SensorSnapshot SensorDataReader::readCsv(const QString &filePath) const
 
             snapshot.values.append({displayNameFor(key), displayValueFor(key, value), unitFor(key)});
         }
-        return snapshot;
+
+        if (snapshot.values.size() > valueCountBefore) {
+            return snapshot;
+        }
+    }
+
+    const QStringList standardFields = sensorCsvFields();
+    if (!isStandardCsvHeader(last) && last.size() >= 6) {
+        for (int i = 0; i < qMin(last.size(), standardFields.size()); ++i) {
+            const QString key = standardFields.at(i);
+            const QString value = last.at(i).trimmed();
+            if (value.isEmpty() || !shouldDisplayField(key)) {
+                continue;
+            }
+
+            snapshot.values.append({displayNameFor(key), displayValueFor(key, value), unitFor(key)});
+        }
+
+        if (!snapshot.values.isEmpty()) {
+            return snapshot;
+        }
     }
 
     if (rows.size() >= 2) {
@@ -167,12 +220,12 @@ bool SensorDataReader::shouldDisplayField(const QString &key) const
     const QString lowered = key.trimmed().toLower();
 
     static const QStringList allowedFields = {
-        "temperature_c",
-        "humidity_rh",
-        "co2_ppm",
-        "light_lux",
-        "air_quality_ppm",
-        "env_status"
+        sensorCsvFields().at(0),
+        sensorCsvFields().at(1),
+        sensorCsvFields().at(2),
+        sensorCsvFields().at(3),
+        sensorCsvFields().at(4),
+        sensorCsvFields().at(5)
     };
 
     return allowedFields.contains(lowered);

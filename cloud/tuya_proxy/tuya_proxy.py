@@ -19,10 +19,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "tuya_cloud.json"
 DEFAULT_SECRET_CONFIG = PROJECT_ROOT / "config" / "tuya_cloud_secrets.json"
+MOTOR_CONFIG = PROJECT_ROOT / "config" / "motor.yaml"
 QUALITY_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_quality_realtime.json"
 SENSOR_CSV = PROJECT_ROOT / "datas" / "csv" / "sensor_realtime.csv"
 BATCH_JSON = PROJECT_ROOT / "datas" / "csv" / "mango_batch_summary.json"
@@ -149,6 +152,12 @@ DEFAULT_CONTROL_STATUS: dict[str, Any] = {
     "led_brightness": 40,
     "detect_cmd": "idle",
     "auto_sort_enable": True,
+}
+
+DEFAULT_CONVEYOR_SPEEDS = {
+    "slow": 0.10,
+    "medium": 0.13,
+    "fast": 0.16,
 }
 
 
@@ -425,12 +434,18 @@ def read_control_state() -> dict[str, Any]:
     for code in DEFAULT_CONTROL_STATUS:
         if code in saved:
             status[code] = saved[code]
+    detect_request_id = str(saved.get("detect_request_id") or "").strip()
+    if detect_request_id:
+        status["detect_request_id"] = detect_request_id
     return status
 
 
 def write_control_state(status: dict[str, Any]) -> None:
     CONTROL_STATE_JSON.parent.mkdir(parents=True, exist_ok=True)
     payload = {code: status.get(code, default) for code, default in DEFAULT_CONTROL_STATUS.items()}
+    detect_request_id = str(status.get("detect_request_id") or "").strip()
+    if detect_request_id:
+        payload["detect_request_id"] = detect_request_id
     tmp_path = CONTROL_STATE_JSON.with_suffix(".json.tmp")
     with tmp_path.open("w", encoding="utf-8") as fp:
         json.dump(payload, fp, ensure_ascii=False, indent=2)
@@ -444,6 +459,8 @@ def apply_control_commands(status: dict[str, Any], commands: list[dict[str, Any]
         code = command["code"]
         value = command["value"]
         next_status[code] = value
+        if code == "detect_cmd" and value != "idle":
+            next_status["detect_request_id"] = str(time.time_ns())
         if code == "led_brightness" and int(value) > 0:
             next_status["led_switch"] = True
         elif code == "led_switch" and value is False:
@@ -452,8 +469,6 @@ def apply_control_commands(status: dict[str, Any], commands: list[dict[str, Any]
             next_status["device_status"] = "idle"
         elif code == "conveyor_cmd" and value in {"forward", "reverse"}:
             next_status["device_status"] = "running"
-        elif code == "detect_cmd" and value in {"stop", "idle"}:
-            next_status["detect_cmd"] = "idle" if value == "stop" else value
     return next_status
 
 
@@ -474,7 +489,18 @@ def read_local_status() -> dict[str, Any]:
             "maturity_confidence": scaled_number(quality.get("maturity_confidence"), 1),
             "sugar_label": enum_code(
                 quality.get("sugar_label"),
-                {"无法": "unable", "偏低": "low", "低": "low", "正常": "normal", "适中": "normal", "偏高": "high", "高": "high"},
+                {
+                    "无法": "unable",
+                    "不可靠": "unable",
+                    "偏低": "low",
+                    "低": "low",
+                    "中等": "normal",
+                    "正常": "normal",
+                    "适中": "normal",
+                    "偏高": "high",
+                    "较高": "high",
+                    "高": "high",
+                },
                 "unknown",
             ),
             "sugar_score": scaled_number(quality.get("sugar_score"), 1),
@@ -486,7 +512,7 @@ def read_local_status() -> dict[str, Any]:
             "rot_score": scaled_number(quality.get("rot_score"), 1),
             "final_status": quality.get("final_status") or "--",
             "yolo_label": quality.get("yolo_label") or "--",
-            "yolo_confidence": scaled_number(quality.get("yolo_confidence"), 1),
+            "yolo_confidence": scaled_number(quality.get("yolo_confidence"), 3),
             "data_status": quality.get("data_status") or "--",
             "last_update": quality.get("timestamp") or "--",
             "suggested_channel": enum_code(
@@ -542,12 +568,36 @@ def build_local_status_payload(device_id: str, source: str = "local") -> dict[st
     )
 
 
+def read_conveyor_config() -> dict[str, Any]:
+    try:
+        with MOTOR_CONFIG.open("r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+    except (FileNotFoundError, OSError, yaml.YAMLError):
+        return {}
+    return data.get("motor", {}).get("conveyor", {}) or {}
+
+
 def conveyor_speed_ms(speed: Any) -> float:
-    if speed == "slow":
-        return 0.10
-    if speed == "fast":
-        return 0.16
-    return 0.13
+    speed_key = str(speed or "medium")
+    if speed_key not in DEFAULT_CONVEYOR_SPEEDS:
+        speed_key = "medium"
+
+    conveyor = read_conveyor_config()
+    configured = conveyor.get(f"{speed_key}_speed_ms", conveyor.get("default_speed_ms"))
+    try:
+        speed_ms = float(configured)
+    except (TypeError, ValueError):
+        speed_ms = DEFAULT_CONVEYOR_SPEEDS[speed_key]
+
+    try:
+        min_speed = float(conveyor.get("min_speed_ms", min(DEFAULT_CONVEYOR_SPEEDS.values())))
+        max_speed = float(conveyor.get("max_speed_ms", max(DEFAULT_CONVEYOR_SPEEDS.values())))
+    except (TypeError, ValueError):
+        min_speed = min(DEFAULT_CONVEYOR_SPEEDS.values())
+        max_speed = max(DEFAULT_CONVEYOR_SPEEDS.values())
+    if min_speed > 0 and max_speed >= min_speed:
+        speed_ms = max(min_speed, min(max_speed, speed_ms))
+    return speed_ms
 
 
 def run_local_command(command: dict[str, Any], control_state: dict[str, Any]) -> None:
@@ -593,6 +643,10 @@ def run_local_command(command: dict[str, Any], control_state: dict[str, Any]) ->
             brightness = int(control_state.get("led_brightness") or 40)
             args = ["python3", str(PROJECT_ROOT / "src/hardware/led/ws2812b.py"), "set", "--brightness", str(brightness)]
         subprocess.run(args, check=True, timeout=8)
+    elif code == "auto_sort_enable":
+        return
+    elif code == "detect_cmd":
+        return
 
 
 def validate_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -745,6 +799,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         "status": control_state,
                         "tuya_error": exc.detail,
                     })
+                except ProxyError as local_exc:
+                    write_control_state(previous_state)
+                    self.send_error_json(local_exc)
                 except Exception as local_exc:
                     write_control_state(previous_state)
                     self.send_error_json(ProxyError(f"Local command failed: {local_exc}", 500, exc.detail))

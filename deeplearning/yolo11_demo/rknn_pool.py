@@ -40,19 +40,22 @@ class RKNNPoolExecutor:
         self._infer_func = infer_func
         self._queue = Queue()
         self._rknns = []
-        self._pool = None
+        self._pools = []
         self._submit_count = 0
         try:
             self._rknns = [init_rknn(model_path, i) for i in range(workers)]
-            self._pool = ThreadPoolExecutor(max_workers=workers)
+            self._pools = [ThreadPoolExecutor(max_workers=1) for _ in range(workers)]
         except Exception:
+            for pool in self._pools:
+                pool.shutdown(wait=True)
             for rknn in self._rknns:
                 rknn.release()
             raise
 
     def put(self, frame):
-        rknn = self._rknns[self._submit_count % self._workers]
-        self._queue.put(self._pool.submit(self._infer_func, rknn, frame))
+        worker_index = self._submit_count % self._workers
+        rknn = self._rknns[worker_index]
+        self._queue.put(self._pools[worker_index].submit(self._infer_func, rknn, frame))
         self._submit_count += 1
 
     def get(self):
@@ -62,7 +65,7 @@ class RKNNPoolExecutor:
         return future.result(), True
 
     def release(self):
-        if self._pool is not None:
-            self._pool.shutdown(wait=True)
+        for pool in self._pools:
+            pool.shutdown(wait=True)
         for rknn in self._rknns:
             rknn.release()

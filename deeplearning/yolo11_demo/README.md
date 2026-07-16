@@ -26,4 +26,4 @@ For RK3588, keep `--workers 3` in production so each RKNNLite instance maps to o
 
 If `init_runtime` fails with `failed to open rknpu module`, run on the RK3588 board with the Rockchip NPU driver loaded and a compatible `librknnrt.so`.
 
-The mango model classes are `mango_unripe`, `mango_ripe`, and `mango_overripe`, matching the mango quality fusion module.
+The mango model class order is `mango_overripe`, `mango_ripe`, and `mango_unripe` for class IDs 0, 1, and 2. The order must match the model output channels; the names are interpreted by the mango quality fusion module.

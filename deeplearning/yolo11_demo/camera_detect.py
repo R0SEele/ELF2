@@ -6,6 +6,7 @@ import signal
 from pathlib import Path
 import struct
 import sys
+import threading
 import time
 
 import cv2
@@ -170,8 +171,25 @@ def parse_args():
         default=DEFAULT_OBJECT_JSON,
         help="JSON path for latest completed mango object result",
     )
-    parser.add_argument("--enter-line-ratio", type=float, default=0.20, help="Top-to-bottom tracking enter line")
-    parser.add_argument("--count-line-ratio", type=float, default=0.75, help="Top-to-bottom counting line")
+    parser.add_argument("--enter-line-ratio", type=float, default=0.20, help="Tracking enter line ratio")
+    parser.add_argument("--count-line-ratio", type=float, default=0.75, help="Counting line ratio")
+    parser.add_argument(
+        "--count-axis",
+        choices=("auto", "x", "y"),
+        default="auto",
+        help="Axis used for line-crossing count. auto follows the dominant movement axis.",
+    )
+    parser.add_argument(
+        "--count-direction",
+        choices=("any", "positive", "negative"),
+        default="any",
+        help="Movement direction for count-line crossing.",
+    )
+    parser.add_argument(
+        "--no-exit-count",
+        action="store_true",
+        help="Disable fallback counting when a stable tracked mango leaves the view.",
+    )
     parser.add_argument("--show-count-lines", action="store_true", help="Draw debug enter/count lines on the video")
     parser.add_argument("--track-min-frames", type=int, default=4, help="Min stable frames before counting a mango")
     parser.add_argument("--track-max-missed", type=int, default=6, help="Frames to keep a temporarily lost mango ID")
@@ -238,9 +256,59 @@ def write_qt_frame(output, frame, jpeg_quality):
         return False
 
     data = payload.tobytes()
-    output.write(struct.pack(">I", len(data)))
-    output.write(data)
-    return True
+    try:
+        output.write(struct.pack(">I", len(data)))
+        output.write(data)
+        return True
+    except (BrokenPipeError, OSError, ValueError):
+        return False
+
+
+class LatestQtFrameWriter:
+    """Write preview frames without letting a slow Qt display block detection."""
+
+    def __init__(self, output, jpeg_quality):
+        self.output = output
+        self.jpeg_quality = jpeg_quality
+        self._condition = threading.Condition()
+        self._latest_frame = None
+        self._stopping = False
+        self._failed = False
+        self._thread = threading.Thread(target=self._run, name="qt-frame-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, frame):
+        with self._condition:
+            if self._stopping or self._failed:
+                return False
+            self._latest_frame = frame
+            self._condition.notify()
+            return True
+
+    def _run(self):
+        while True:
+            with self._condition:
+                while self._latest_frame is None and not self._stopping:
+                    self._condition.wait()
+                if self._latest_frame is None and self._stopping:
+                    return
+                frame = self._latest_frame
+                self._latest_frame = None
+
+            if not write_qt_frame(self.output, frame, self.jpeg_quality):
+                with self._condition:
+                    self._failed = True
+                    self._latest_frame = None
+                return
+
+    def close(self, timeout=0.5):
+        with self._condition:
+            self._stopping = True
+            self._latest_frame = None
+            self._condition.notify()
+        self._thread.join(timeout=max(0.0, float(timeout)))
+        if not self._thread.is_alive():
+            self.output.close()
 
 
 COLOR_CSV_FIELDS = [
@@ -405,16 +473,18 @@ class MangoTrack:
         self.first_frame = frame_index
         self.last_frame = frame_index
         self.last_feature = dict(feature)
-        self.prev_center_y = _box_center(feature)[1]
-        self.center_y = self.prev_center_y
+        center = _box_center(feature)
+        self.first_center = center
+        self.prev_center = center
+        self.center = center
         self.missed = 0
         self.counted = False
         self.samples = []
         self.add_sample(feature, frame_index)
 
     def add_sample(self, feature, frame_index):
-        self.prev_center_y = self.center_y
-        self.center_y = _box_center(feature)[1]
+        self.prev_center = self.center
+        self.center = _box_center(feature)
         self.last_frame = frame_index
         self.last_feature = dict(feature)
         self.missed = 0
@@ -459,11 +529,23 @@ class MangoTrack:
 
 
 class MangoTracker:
-    def __init__(self, enter_line_ratio=0.20, count_line_ratio=0.75, min_frames=4, max_missed=6):
+    def __init__(
+        self,
+        enter_line_ratio=0.20,
+        count_line_ratio=0.75,
+        min_frames=4,
+        max_missed=6,
+        count_axis="auto",
+        count_direction="any",
+        exit_count=True,
+    ):
         self.enter_line_ratio = enter_line_ratio
         self.count_line_ratio = count_line_ratio
         self.min_frames = max(1, int(min_frames))
         self.max_missed = max(1, int(max_missed))
+        self.count_axis = count_axis if count_axis in ("auto", "x", "y") else "auto"
+        self.count_direction = count_direction if count_direction in ("any", "positive", "negative") else "any"
+        self.exit_count = bool(exit_count)
         self.next_track_id = 1
         self.tracks = {}
         self.completed_count = 0
@@ -479,11 +561,9 @@ class MangoTracker:
         tx, ty = _box_center(track.last_feature)
         dx = abs(cx - tx)
         dy = abs(cy - ty)
-        max_dx = max(60.0, width * 0.18)
-        max_dy = max(80.0, height * 0.22)
+        max_dx = max(80.0, width * 0.35)
+        max_dy = max(80.0, height * 0.35)
         if dx > max_dx or dy > max_dy:
-            return None
-        if cy < ty - height * 0.10:
             return None
         area_ratio = _box_area(feature) / max(_box_area(track.last_feature), 1.0)
         if area_ratio < 0.30 or area_ratio > 3.20:
@@ -491,10 +571,61 @@ class MangoTracker:
         overlap = _iou(track.last_feature, feature)
         return (dx / max_dx) + (dy / max_dy) - overlap
 
+    def _crossed(self, previous, current, line):
+        if self.count_direction == "positive":
+            return previous < line <= current
+        if self.count_direction == "negative":
+            return previous > line >= current
+        return (previous < line <= current) or (previous > line >= current)
+
+    def _crossed_count_line(self, track, width, height):
+        axes = self._movement_axes(track, width, height)
+        for axis in axes:
+            if axis == "x":
+                line = width * self.count_line_ratio
+                previous = track.prev_center[0]
+                current = track.center[0]
+            else:
+                line = height * self.count_line_ratio
+                previous = track.prev_center[1]
+                current = track.center[1]
+            if self._crossed(previous, current, line):
+                return True
+        return False
+
+    def _movement_axes(self, track, width, height):
+        if self.count_axis != "auto":
+            return (self.count_axis,)
+
+        dx = abs(track.center[0] - track.first_center[0]) / max(float(width), 1.0)
+        dy = abs(track.center[1] - track.first_center[1]) / max(float(height), 1.0)
+        return ("x",) if dx >= dy else ("y",)
+
+    def _eligible_for_exit_count(self, track, width, height):
+        axis = self._movement_axes(track, width, height)[0]
+        size = float(width if axis == "x" else height)
+        start = track.first_center[0 if axis == "x" else 1]
+        current = track.center[0 if axis == "x" else 1]
+        travel = current - start
+        if abs(travel) < size * 0.05:
+            return False
+
+        if self.count_direction == "positive":
+            return travel > 0
+        if self.count_direction == "negative":
+            return travel < 0
+        return True
+
+    def _has_enough_samples(self, track):
+        return len(track.samples) >= self.min_frames
+
+    def _complete_track(self, track, frame_index):
+        track.counted = True
+        self.completed_count += 1
+        return track.summary(frame_index)
+
     def update(self, features, frame_index, frame_shape):
         height, width = frame_shape[:2]
-        count_line_y = height * self.count_line_ratio
-        enter_line_y = height * self.enter_line_ratio
 
         candidates = []
         unmatched_tracks = set(self.tracks.keys())
@@ -502,8 +633,6 @@ class MangoTracker:
 
         for feature_index, feature in enumerate(features):
             for track_id, track in self.tracks.items():
-                if track.counted:
-                    continue
                 score = self._match_score(track, feature, width, height)
                 if score is not None:
                     candidates.append((score, track_id, feature_index))
@@ -527,14 +656,18 @@ class MangoTracker:
             track.missed += 1
 
         for track_id, track in list(self.tracks.items()):
-            crossed = track.prev_center_y < count_line_y <= track.center_y
-            has_enough_samples = len(track.samples) >= self.min_frames
-            entered = track.center_y >= enter_line_y
-            if not track.counted and crossed and has_enough_samples and entered:
-                track.counted = True
-                self.completed_count += 1
-                completed.append(track.summary(frame_index))
-            if track.missed > self.max_missed or (track.counted and track.center_y > count_line_y + height * 0.10):
+            if not track.counted and self._has_enough_samples(track) and self._crossed_count_line(track, width, height):
+                completed.append(self._complete_track(track, frame_index))
+
+            should_remove = track.missed > self.max_missed
+            if should_remove:
+                if (
+                    self.exit_count
+                    and not track.counted
+                    and self._has_enough_samples(track)
+                    and self._eligible_for_exit_count(track, width, height)
+                ):
+                    completed.append(self._complete_track(track, frame_index))
                 self.tracks.pop(track_id, None)
 
         return completed
@@ -596,6 +729,8 @@ def draw_tracking_overlay(image, tracker, enter_line_ratio, count_line_ratio, sh
     if show_count_lines:
         cv2.line(image, (0, enter_y), (width - 1, enter_y), (80, 180, 255), 2)
         cv2.line(image, (0, count_y), (width - 1, count_y), (0, 220, 120), 2)
+        count_x = int(width * count_line_ratio)
+        cv2.line(image, (count_x, 0), (count_x, height - 1), (0, 220, 120), 2)
         cv2.putText(image, "Detect zone", (12, max(24, enter_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 180, 255), 2)
         cv2.putText(image, "Count line", (12, max(24, count_y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 120), 2)
 
@@ -624,6 +759,7 @@ def main():
         args.no_display = True
 
     frame_output = setup_qt_frame_output() if args.qt_stream else None
+    frame_writer = LatestQtFrameWriter(frame_output, args.jpeg_quality) if frame_output is not None else None
     configure_display_environment(args)
     labels = load_labels(args.labels) if args.labels else None
     detector = YOLO11RKNNDetector(
@@ -649,6 +785,9 @@ def main():
         count_line_ratio=args.count_line_ratio,
         min_frames=args.track_min_frames,
         max_missed=args.track_max_missed,
+        count_axis=args.count_axis,
+        count_direction=args.count_direction,
+        exit_count=not args.no_exit_count,
     )
 
     try:
@@ -697,7 +836,7 @@ def main():
             )
 
             if args.qt_stream:
-                if not write_qt_frame(frame_output, annotated, args.jpeg_quality):
+                if not frame_writer.submit(annotated):
                     break
             elif not args.no_display:
                 shown = maybe_resize_for_display(
@@ -728,8 +867,8 @@ def main():
             pool.release()
         if not args.no_display:
             cv2.destroyAllWindows()
-        if frame_output is not None:
-            frame_output.close()
+        if frame_writer is not None:
+            frame_writer.close()
 
     elapsed = time.time() - start_time
     print(
