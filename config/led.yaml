@@ -9,6 +9,13 @@ led:
     bit0_pattern: "100"
     bit1_pattern: "110"
     color_order: GRB
+    # Per-channel white balance (0~1). Lower blue / green than red = warmer light.
+    # 白平衡通道增益(0~1)。降低蓝、绿相对红色的比例即为暖色光。
+    # 1.0 / 1.0 / 1.0 = neutral white; the values below give a warm (~3000K) tint.
+    white_balance:
+      r: 1.0
+      g: 0.62
+      b: 0.32
     # Set this to the total number of WS2812B LEDs in the ring.
     count: 90
     # 90 LEDs at 80% white can draw about 4.3 A. Keep startup current low;

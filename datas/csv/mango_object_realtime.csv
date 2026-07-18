@@ -1,2 +1,2 @@
 timestamp,frame_index,mango_id,track_id,label,confidence,x1,y1,x2,y2,center_x,center_y,area_px,stable_frames,first_frame,last_frame,consistency_score,consistency_label,rgb_r_mean,rgb_g_mean,rgb_b_mean,hsv_h_mean_deg,hsv_s_mean_pct,hsv_v_mean_pct,green_ratio,yellow_orange_ratio,dark_spot_ratio,brown_area_ratio
-2026-07-16 10:52:26,2702,30,30,mango_overripe,0.8595,67,247,472,478,269,362,108984,39,2664,2702,1.0000,高,132.4389,98.4380,72.1680,70.2121,49.5790,52.0006,0.1267,0.8089,0.2583,0.4883
+2026-07-19 01:43:32,10945,13,13,mango_ripe,0.6131,0,121,523,417,261,269,149485,12,10926,10938,1.0000,高,162.7468,102.2803,112.9658,178.3731,44.8772,68.0182,0.0431,0.2540,0.0007,0.1515

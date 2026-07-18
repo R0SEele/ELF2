@@ -77,11 +77,20 @@ def _pack_bits(bits):
     return output
 
 
-def _white_frame(count, value, color_order, bit0_pattern, bit1_pattern):
+def _scale_channel(value, gain):
+    return max(0, min(255, int(round(value * _clamp_gain(gain)))))
+
+
+def _clamp_gain(value):
+    return max(0.0, min(1.0, float(value)))
+
+
+def _white_frame(count, value, color_order, bit0_pattern, bit1_pattern, white_balance=None):
+    wb = white_balance or {}
     channels = {
-        "R": value,
-        "G": value,
-        "B": value,
+        "R": _scale_channel(value, wb.get("r", 1.0)),
+        "G": _scale_channel(value, wb.get("g", 1.0)),
+        "B": _scale_channel(value, wb.get("b", 1.0)),
     }
     bits = []
     for _ in range(count):
@@ -105,6 +114,7 @@ def _apply_white(cfg, brightness_pct, enabled, count_override=None):
     bit0_pattern = _parse_pattern(str(cfg.get("bit0_pattern", "100")), "bit0_pattern")
     bit1_pattern = _parse_pattern(str(cfg.get("bit1_pattern", "110")), "bit1_pattern")
     color_order = str(cfg.get("color_order", "GRB")).upper()
+    white_balance = cfg.get("white_balance") or {}
     max_brightness_pct = _clamp_pct(cfg.get("max_brightness_pct", 100))
     if count <= 0:
         raise WS2812BError("count must be > 0")
@@ -118,7 +128,7 @@ def _apply_white(cfg, brightness_pct, enabled, count_override=None):
     value = int(round(255.0 * brightness_pct / 100.0)) if enabled else 0
     value = max(0, min(255, value))
 
-    frame = _white_frame(count, value, color_order, bit0_pattern, bit1_pattern)
+    frame = _white_frame(count, value, color_order, bit0_pattern, bit1_pattern, white_balance)
     fd = None
     try:
         fd = os.open(device, os.O_WRONLY)
