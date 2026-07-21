@@ -37,9 +37,9 @@ DP_META: dict[str, dict[str, Any]] = {
     "humidity_rh": {"label": "湿度", "group": "environment", "type": "value", "scale": 1, "unit": "%RH"},
     "co2_ppm": {"label": "CO2", "group": "environment", "type": "value", "unit": "ppm"},
     "light_lux": {"label": "光照", "group": "environment", "type": "value", "unit": "lux"},
-    "air_quality_ppm": {"label": "空气质量", "group": "environment", "type": "value", "unit": "ppm"},
+    "air_quality_ppm": {"label": "空气质量相对值", "group": "environment", "type": "value", "unit": "%"},
     "env_status": {
-        "label": "环境状态",
+        "label": "传感器状态",
         "group": "environment",
         "type": "enum",
         "enum": {"normal": "正常", "partial_error": "部分异常", "error": "异常", "unknown": "未知"},
@@ -77,7 +77,7 @@ DP_META: dict[str, dict[str, Any]] = {
     "yolo_label": {"label": "YOLO结果", "group": "quality", "type": "string"},
     "yolo_confidence": {"label": "YOLO置信度", "group": "quality", "type": "value", "scale": 1, "unit": "%"},
     "data_status": {"label": "数据状态", "group": "quality", "type": "string"},
-    "last_update": {"label": "更新时间", "group": "quality", "type": "string"},
+    "last_update": {"label": "品质更新时间", "group": "quality", "type": "string"},
     "suggested_channel": {
         "label": "建议通道",
         "group": "quality",
@@ -126,6 +126,22 @@ DP_META: dict[str, dict[str, Any]] = {
         "enum": {"idle": "空闲", "start": "开始", "stop": "停止", "snapshot": "抓拍"},
     },
     "auto_sort_enable": {"label": "自动分拣", "group": "control", "type": "bool", "writable": True},
+    "detect_request_id": {"label": "检测请求号", "group": "control", "type": "string"},
+    "detect_status": {
+        "label": "检测状态",
+        "group": "control",
+        "type": "enum",
+        "enum": {
+            "idle": "空闲",
+            "starting": "启动中",
+            "running": "运行中",
+            "stopping": "停止中",
+            "snapshotting": "抓拍中",
+            "snapshot_done": "抓拍完成",
+            "failed": "失败",
+        },
+    },
+    "detect_result": {"label": "检测执行结果", "group": "control", "type": "string"},
     "device_status": {
         "label": "设备状态",
         "group": "device",
@@ -144,13 +160,15 @@ GROUP_LABELS = {
 }
 
 DEFAULT_CONTROL_STATUS: dict[str, Any] = {
-    "device_status": "running",
+    "device_status": "idle",
     "conveyor_cmd": "stop",
     "conveyor_speed": "medium",
     "sorter_position": "center",
     "led_switch": False,
     "led_brightness": 40,
     "detect_cmd": "idle",
+    "detect_status": "idle",
+    "detect_result": "",
     "auto_sort_enable": True,
 }
 
@@ -306,7 +324,11 @@ class TuyaOpenApi:
                 return {
                     "success": True,
                     "result": [
-                        {"code": item.get("code"), "value": item.get("value")}
+                        {
+                            "code": item.get("code"),
+                            "value": item.get("value"),
+                            "time": item.get("time") or item.get("update_time"),
+                        }
                         for item in properties
                         if item.get("code")
                     ],
@@ -369,11 +391,16 @@ def normalize_value(code: str, value: Any) -> tuple[Any, str]:
 def build_status_payload(device_id: str, tuya_response: dict[str, Any], source: str = "tuya") -> dict[str, Any]:
     result = tuya_response.get("result") or []
     status_map: dict[str, Any] = {}
+    status_updated_at: dict[str, int] = {}
     if isinstance(result, list):
         for item in result:
             code = item.get("code")
             if code:
-                status_map[str(code)] = item.get("value")
+                code = str(code)
+                status_map[code] = item.get("value")
+                updated_at = int(item.get("time") or item.get("update_time") or 0)
+                if updated_at > 0:
+                    status_updated_at[code] = updated_at
     elif isinstance(result, dict):
         for key, value in result.items():
             status_map[str(key)] = value
@@ -402,6 +429,7 @@ def build_status_payload(device_id: str, tuya_response: dict[str, Any], source: 
         "device_id": device_id,
         "updated_at": int(time.time() * 1000),
         "status": status_map,
+        "status_updated_at": status_updated_at,
         "items": items,
         "groups": groups,
         "group_labels": GROUP_LABELS,
@@ -461,6 +489,12 @@ def apply_control_commands(status: dict[str, Any], commands: list[dict[str, Any]
         next_status[code] = value
         if code == "detect_cmd" and value != "idle":
             next_status["detect_request_id"] = str(time.time_ns())
+            next_status["detect_result"] = ""
+            next_status["detect_status"] = {
+                "start": "starting",
+                "stop": "stopping",
+                "snapshot": "snapshotting",
+            }.get(str(value), "idle")
         if code == "led_brightness" and int(value) > 0:
             next_status["led_switch"] = True
         elif code == "led_switch" and value is False:
@@ -545,7 +579,6 @@ def read_local_status() -> dict[str, Any]:
                     "light_lux": scaled_number(row[3]),
                     "air_quality_ppm": scaled_number(row[4]),
                     "env_status": enum_code(row[5], {"正常": "normal", "部分": "partial_error", "异常": "error"}, "unknown"),
-                    "last_update": row[6] or status.get("last_update", "--"),
                 })
 
     batch = read_json_file(BATCH_JSON)
@@ -711,6 +744,9 @@ def mock_tuya_response() -> dict[str, Any]:
             {"code": "led_brightness", "value": 40},
             {"code": "detect_cmd", "value": "idle"},
             {"code": "auto_sort_enable", "value": True},
+            {"code": "detect_request_id", "value": "mock-1"},
+            {"code": "detect_status", "value": "idle"},
+            {"code": "detect_result", "value": ""},
         ],
     }
 
@@ -719,6 +755,7 @@ class ProxyState:
     def __init__(self, config: dict[str, Any], mock: bool):
         self.config = config
         self.mock = mock
+        self.access_token = str(os.environ.get("APP_ACCESS_TOKEN") or "").strip()
         self.api = None if mock else TuyaOpenApi(config)
 
 
@@ -734,6 +771,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         try:
+            self.require_access()
             path = urllib.parse.urlparse(self.path).path
             if path == "/api/health":
                 self.send_json({
@@ -769,6 +807,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         path = ""
         commands: list[dict[str, Any]] = []
         try:
+            self.require_access()
             path = urllib.parse.urlparse(self.path).path
             body = self.read_body_json()
             if path == "/api/device/command":
@@ -781,8 +820,6 @@ class ProxyHandler(BaseHTTPRequestHandler):
             response = {"success": True, "result": True} if self.state.mock else self.state.api.send_commands(commands)
             if not response.get("success"):
                 raise ProxyError("Tuya rejected command", 502, response)
-            control_state = apply_control_commands(read_control_state(), commands)
-            write_control_state(control_state)
             self.send_json({"ok": True, "commands": commands, "tuya": response})
         except ProxyError as exc:
             if path in {"/api/device/command", "/api/device/commands"} and self.can_use_local_fallback(exc):
@@ -814,6 +851,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
         text = json.dumps(exc.detail, ensure_ascii=False) if exc.detail is not None else str(exc)
         return "command or value not support" in text or '"code": 2008' in text or "'code': 2008" in text
 
+    def require_access(self) -> None:
+        expected = self.state.access_token
+        if not expected:
+            return
+        supplied = str(self.headers.get("X-Access-Token") or "")
+        if not hmac.compare_digest(supplied, expected):
+            raise ProxyError("访问口令错误", 401)
+
     def read_body_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0") or 0)
         raw = self.rfile.read(length) if length else b"{}"
@@ -832,7 +877,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type,X-Access-Token")
         self.end_headers()
         self.wfile.write(payload)
 

@@ -390,6 +390,24 @@
   flex-wrap: wrap;
 }
 
+.env-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.env-head-actions .tag {
+  margin-top: 0;
+}
+
+.env-trend-link {
+  height: 46rpx;
+  padding: 0 8rpx;
+  line-height: 46rpx;
+  font-size: 24rpx;
+  color: var(--brand);
+}
+
 .env-tile {
   box-sizing: border-box;
   width: calc((100% - 16rpx) / 2);
@@ -434,6 +452,58 @@
   font-weight: 700;
   color: var(--ink);
   word-break: break-all;
+}
+
+.env-alert {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 4rpx;
+  padding: 18rpx;
+  border-radius: var(--radius-sm);
+  background: var(--ok-soft);
+}
+
+.env-alert-warn {
+  background: var(--warn-soft);
+}
+
+.env-alert-dot {
+  flex-shrink: 0;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.env-alert-warn .env-alert-dot {
+  background: var(--warn);
+}
+
+.env-alert-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.env-alert-title {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.env-alert-summary {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.env-alert-arrow {
+  flex-shrink: 0;
+  font-size: 36rpx;
+  color: var(--ink-3);
 }
 
 /* ---------- 批次统计 ---------- */
@@ -597,6 +667,14 @@
 
 .action-row .btn:first-child {
   margin-left: 0;
+}
+
+.detect-result {
+  margin-top: 16rpx;
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: var(--ink-3);
+  word-break: break-all;
 }
 
 /* ---------- 页脚 ---------- */

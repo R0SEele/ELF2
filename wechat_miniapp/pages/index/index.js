@@ -1,4 +1,5 @@
 const app = getApp();
+const environmentHistory = require("../../utils/environmentHistory");
 
 const optionSets = {
   conveyor_cmd: [
@@ -34,6 +35,15 @@ const CHANNEL_CLASS = {
   unknown: "muted"
 };
 const ENV_CLASS = { normal: "ok", partial_error: "warn", error: "danger", unknown: "muted" };
+const DETECT_CLASS = {
+  idle: "muted",
+  starting: "info",
+  running: "ok",
+  stopping: "info",
+  snapshotting: "info",
+  snapshot_done: "ok",
+  failed: "danger"
+};
 
 const ENV_ICON = {
   temperature_c: "🌡️",
@@ -90,6 +100,7 @@ Page({
     },
     envStatus: { display: "--", class: "muted" },
     environment: [],
+    envAlert: { count: 0, summary: "当前环境数据正常", class: "ok" },
     batch: {
       total: 0,
       a: 0,
@@ -103,6 +114,7 @@ Page({
     ledOn: false,
     ledBrightness: 40,
     autoSort: true,
+    detectState: { display: "空闲", class: "muted", result: "" },
     conveyorOptions: optionSets.conveyor_cmd,
     speedOptions: optionSets.conveyor_speed,
     sorterOptions: optionSets.sorter_position,
@@ -170,6 +182,8 @@ Page({
         });
         const envMap = itemMap(data.groups.environment);
         const hasDeviceStatus = !!device.device_status;
+        const environmentResult = environmentHistory.recordPayload(data);
+        const alarms = environmentResult.alarms;
 
         const patch = {
           connected: true,
@@ -189,8 +203,18 @@ Page({
             display: pickDisplay(envMap, "env_status", "正常"),
             class: classFrom(ENV_CLASS, rawOf(envMap, "env_status"))
           },
+          envAlert: {
+            count: alarms.length,
+            summary: alarms.length ? alarms[0].message : "当前环境数据正常",
+            class: alarms.length ? "warn" : "ok"
+          },
           environment,
           batch: this.buildBatch(itemMap(data.groups.batch))
+        };
+        patch.detectState = {
+          display: pickDisplay(control, "detect_status", "空闲"),
+          class: classFrom(DETECT_CLASS, rawOf(control, "detect_status")),
+          result: pickDisplay(control, "detect_result", "")
         };
 
         // 刚下发过控制命令时，涂鸦设备影子可能还没回写新值；此窗口内保留本地乐观状态，避免控件“回弹”
@@ -291,6 +315,12 @@ Page({
   openQualityPage() {
     wx.navigateTo({
       url: "/pages/quality/quality"
+    });
+  },
+
+  openEnvironmentPage() {
+    wx.navigateTo({
+      url: "/pages/environment/environment"
     });
   },
 

@@ -98,7 +98,6 @@ AS7341 光谱(collect.py/color.py) → spectrum_quality_samples.csv
 | `src/software/mango_quality/` | 质检融合算法 | fusion.py（核心）、auto_sorter.py、color_features.py、CLI |
 | `src/software/voice_assistant/` | 语音播报 | voice_assistant.py（DeepSeek + TTS） |
 | `deeplearning/yolo11_demo/` | 生产 YOLO11 推理 | camera_detect.py、yolo11_rknn.py、rknn_pool.py |
-| `deeplearning/demo/` | YOLOv8 帧率参考 demo | main_camera_fps_v8.py |
 | `deeplearning/*.rknn` | RK3588 INT8 量化模型 | mango_yolo11_rk3588_i8.rknn 等 |
 | `deeplearning/rknn-toolkit-lite2/` | 板端推理运行时 v2.3.2 | RKNNLite aarch64 wheel 包 |
 | `qt/fruit_quality_qt/` | Qt 上位机 HMI | mainwindow.cpp（~3400 行）、sensordatareader |

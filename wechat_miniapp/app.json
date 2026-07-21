@@ -1,7 +1,8 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/quality/quality"
+    "pages/quality/quality",
+    "pages/environment/environment"
   ],
   "window": {
     "navigationBarTitleText": "芒果质检助手",

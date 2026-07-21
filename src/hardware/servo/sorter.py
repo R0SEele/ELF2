@@ -52,9 +52,9 @@ def _servo_lock(path: Path = SERVO_LOCK_PATH, timeout_s: float = SERVO_LOCK_TIME
 
 @dataclass(frozen=True)
 class SorterPositions:
-    center_deg: float = 0.0
-    left_deg: float = -45.0
-    right_deg: float = 45.0
+    center_deg: float = 120.0
+    left_deg: float = 0.0
+    right_deg: float = 240.0
 
 
 class SorterServo:
@@ -88,11 +88,11 @@ class SorterServo:
 
     def sort_to(self, position: str, wait: bool = True) -> float:
         normalized = position.strip().lower()
-        if normalized in ("left", "-45", "1", "pos1", "position1"):
+        if normalized in ("left", "0", "1", "pos1", "position1"):
             return self.left(wait=wait)
-        if normalized in ("center", "middle", "0", "2", "pos2", "position2"):
+        if normalized in ("center", "middle", "120", "2", "pos2", "position2"):
             return self.center(wait=wait)
-        if normalized in ("right", "45", "3", "pos3", "position3"):
+        if normalized in ("right", "240", "3", "pos3", "position3"):
             return self.right(wait=wait)
         raise SorterServoError(f"unknown sorter position: {position}")
 
@@ -127,25 +127,29 @@ def load_sorter_servo(config_path: Path = CONFIG_PATH) -> SorterServo:
     calibration = ServoCalibration(
         period_ns=int(timing_cfg.get("period_ns", 20_000_000)),
         min_pulse_us=int(timing_cfg.get("min_pulse_us", 500)),
-        neutral_pulse_us=int(timing_cfg.get("neutral_pulse_us", 1500)),
-        max_pulse_us=int(timing_cfg.get("max_pulse_us", 2500)),
-        min_deg=float(angle_cfg.get("min_deg", -90.0)),
-        neutral_deg=float(angle_cfg.get("neutral_deg", 0.0)),
-        max_deg=float(angle_cfg.get("max_deg", 90.0)),
+        neutral_pulse_us=int(timing_cfg.get("neutral_pulse_us", 1000)),
+        max_pulse_us=int(timing_cfg.get("max_pulse_us", 1500)),
+        min_deg=float(angle_cfg.get("min_deg", 0.0)),
+        neutral_deg=float(angle_cfg.get("neutral_deg", 135.0)),
+        max_deg=float(angle_cfg.get("max_deg", 270.0)),
     )
     positions = SorterPositions(
-        center_deg=float(sorter_cfg.get("center_deg", 0.0)),
-        left_deg=float(sorter_cfg.get("left_deg", -45.0)),
-        right_deg=float(sorter_cfg.get("right_deg", 45.0)),
+        center_deg=float(sorter_cfg.get("center_deg", 120.0)),
+        left_deg=float(sorter_cfg.get("left_deg", 0.0)),
+        right_deg=float(sorter_cfg.get("right_deg", 240.0)),
     )
     settle_s = float(angle_cfg.get("settle_s", 0.35))
 
-    return SorterServo(driver=ServoDriver(pwm=pwm, calibration=calibration), positions=positions, settle_s=settle_s)
+    return SorterServo(
+        driver=ServoDriver(pwm=pwm, calibration=calibration),
+        positions=positions,
+        settle_s=settle_s,
+    )
 
 
 def startup_angle(config_path: Path = CONFIG_PATH) -> float:
     cfg = _load_config(config_path)
-    return float(cfg.get("angle", {}).get("startup_deg", 0.0))
+    return float(cfg.get("angle", {}).get("startup_deg", 120.0))
 
 
 def step_angle(config_path: Path = CONFIG_PATH) -> float:
@@ -157,8 +161,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Move sorter servo to a configured position.")
     parser.add_argument(
         "position",
-        choices=("1", "2", "3", "left", "center", "right", "-45", "0", "45"),
-        help="Sorter position mapped by servo.yaml: 1/left, 2/center, 3/right.",
+        choices=("1", "2", "3", "left", "center", "right", "0", "120", "240"),
+        help="Sorter position: 1/left=0deg, 2/center=120deg, 3/right=240deg.",
     )
     parser.add_argument(
         "--config",
@@ -171,14 +175,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Do not wait for the configured settle time after moving.",
     )
     parser.add_argument(
-        "--hold-after-move",
+        "--release-after-move",
         action="store_true",
-        help="Keep PWM enabled after the move so the servo actively holds position.",
-    )
-    parser.add_argument(
-        "--disable-after-move",
-        action="store_true",
-        help="Deprecated compatibility flag. PWM is disabled after moves by default.",
+        help="Disable PWM after moving instead of continuing to hold the target angle.",
     )
     return parser.parse_args(argv)
 
@@ -193,8 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"position={args.position} angle={actual:.1f}deg")
                 return 0
             finally:
-                disable_after_move = args.disable_after_move or not args.hold_after_move
-                servo.close(disable=disable_after_move)
+                servo.close(disable=args.release_after_move)
     except (SorterServoError, ServoError, OSError, ValueError) as exc:
         print(f"servo command failed: {exc}", file=sys.stderr)
         return 1

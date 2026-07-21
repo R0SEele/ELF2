@@ -33,11 +33,11 @@ class PWMConfig:
 class ServoCalibration:
     period_ns: int = 20_000_000
     min_pulse_us: int = 500
-    neutral_pulse_us: int = 1500
-    max_pulse_us: int = 2500
-    min_deg: float = -90.0
-    neutral_deg: float = 0.0
-    max_deg: float = 90.0
+    neutral_pulse_us: int = 1000
+    max_pulse_us: int = 1500
+    min_deg: float = 0.0
+    neutral_deg: float = 135.0
+    max_deg: float = 270.0
 
     def validate(self) -> None:
         if self.period_ns <= 0:

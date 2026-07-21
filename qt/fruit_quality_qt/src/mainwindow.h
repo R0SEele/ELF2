@@ -144,7 +144,6 @@ private slots:
     void showConveyorControlPage();
     void showLedControlPage();
     void showMangoQualityPage();
-    void showServoControlPage();
     void showBatchStatsPage();
     void showEnvironmentTrendPage();
     void showMangoHistoryPage();
@@ -180,9 +179,7 @@ private slots:
     void turnLedOff();
     void toggleLedAutoMode();
     void updateLedAutoControl();
-    void moveServoToPosition1();
-    void moveServoToPosition2();
-    void moveServoToPosition3();
+    void toggleAutoSort();
 
 private:
     QWidget *createStartPage();
@@ -195,7 +192,6 @@ private:
     QWidget *createConveyorControlPage();
     QWidget *createLedControlPage();
     QWidget *createMangoQualityPage();
-    QWidget *createServoControlPage();
     QWidget *createBatchStatsPage();
     QWidget *createEnvironmentTrendPage();
     QWidget *createVoicePromptPage();
@@ -220,12 +216,15 @@ private:
     void setIotStatusText(const QString &text, const QString &state);
     void initializeExternalControlState();
     QJsonObject readExternalControlState() const;
+    void updateExternalControlState(const QJsonObject &patch);
+    void updateDetectionState(const QString &status, const QString &result);
     void processCameraBuffer();
     void showCameraFrame(const QByteArray &jpegData);
     void rescaleCameraFrame();
     void setVideoMessage(const QString &message);
     double currentConveyorSpeed() const;
     QString currentConveyorGearName() const;
+    QString currentConveyorSpeedCode() const;
     void selectConveyorSpeedGear(int gear);
     void updateConveyorGearButtons();
     void updateConveyorRunButtons();
@@ -234,7 +233,7 @@ private:
     QStringList parseCsvLine(const QString &line) const;
     int readLatestLightLux() const;
     void runLedCommand(int brightnessPct);
-    void runServoCommand(const QString &position, const QString &label);
+    void setAutoSort(bool enabled);
     void runVoicePromptCommand(const QString &target, const QString &label);
 
     QStackedWidget *m_pages;
@@ -254,8 +253,6 @@ private:
     QProcess *m_voicePromptProcess;
     QProcess *m_cameraProcess;
     QProcess *m_motorCommandProcess;
-    QProcess *m_servoCommandProcess;
-    QTimer *m_servoCommandTimer;
     QProcess *m_tuyaIotProcess;
     QTimer *m_iotStatusTimer;
     QTimer *m_controlStateTimer;
@@ -324,12 +321,6 @@ private:
     QLabel *m_voicePromptStatusLabel;
     QPushButton *m_voicePreviousButton;
     QPushButton *m_voiceBatchButton;
-    QLabel *m_servoStatusLabel;
-    QPushButton *m_servoPosition1Button;
-    QPushButton *m_servoPosition2Button;
-    QPushButton *m_servoPosition3Button;
-    QString m_servoCommandLabel;
-    bool m_servoCommandTimedOut;
     int m_conveyorDirection;
     int m_conveyorMinSpeedX10;
     int m_conveyorMaxSpeedX10;
@@ -344,6 +335,8 @@ private:
     bool m_conveyorWasStarted;
     bool m_tuyaIotStartedByQt;
     bool m_shutdownDone;
+    QPushButton *m_autoSortButton;
+    bool m_autoSortEnabled;
 };
 
 #endif // MAINWINDOW_H

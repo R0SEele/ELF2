@@ -143,28 +143,60 @@ App({
     return this.request("/api/device/status");
   },
 
-  waitForDeviceCommand(code, value, baselineUpdatedAt, deadline) {
+  waitForDeviceCommand(code, value, baselineUpdatedAt, baselineStatus, deadline) {
     return this.requestDeviceStatus().then((payload) => {
       const status = payload.status || {};
       const updatedAt = payload.status_updated_at || {};
       const hasDeviceTimestamps = Object.keys(updatedAt).length > 0;
       const isNewer = (key) => Number(updatedAt[key] || 0) > Number(baselineUpdatedAt[key] || 0);
-      const deviceResultFresh = !hasDeviceTimestamps
-        || (isNewer(code) && isNewer("device_status") && isNewer("error_message"));
 
-      if (deviceResultFresh) {
-        if (status.device_status === "error" || status.error_message) {
-          throw { error: status.error_message || "设备执行命令失败" };
+      if (code === "detect_cmd") {
+        const requestId = String(status.detect_request_id || "");
+        const requestChanged = requestId && requestId !== String((baselineStatus || {}).detect_request_id || "");
+        const executionFresh = !hasDeviceTimestamps || isNewer("detect_status");
+        if (requestChanged && executionFresh) {
+          const detectStatus = String(status.detect_status || "");
+          if (detectStatus === "failed" || status.device_status === "error" || status.error_message) {
+            throw { error: status.detect_result || status.error_message || "检测命令执行失败" };
+          }
+          const expected = {
+            start: "running",
+            stop: "idle",
+            snapshot: "snapshot_done"
+          }[String(value)];
+          if (expected && detectStatus === expected) {
+            return {
+              acknowledged: true,
+              code,
+              value,
+              request_id: requestId,
+              detect_status: detectStatus,
+              detect_result: status.detect_result || "",
+              status,
+              status_updated_at: updatedAt
+            };
+          }
         }
-        if (Object.prototype.hasOwnProperty.call(status, code) && sameControlValue(status[code], value)) {
-          return { acknowledged: true, code, value, status, status_updated_at: updatedAt };
+      }
+
+      if (code !== "detect_cmd") {
+        const deviceResultFresh = !hasDeviceTimestamps
+          || (isNewer(code) && isNewer("device_status") && isNewer("error_message"));
+
+        if (deviceResultFresh) {
+          if (status.device_status === "error" || status.error_message) {
+            throw { error: status.error_message || "设备执行命令失败" };
+          }
+          if (Object.prototype.hasOwnProperty.call(status, code) && sameControlValue(status[code], value)) {
+            return { acknowledged: true, code, value, status, status_updated_at: updatedAt };
+          }
         }
       }
       if (Date.now() >= deadline) {
         throw { error: `设备未在 ${COMMAND_ACK_TIMEOUT_MS / 1000} 秒内确认命令` };
       }
       return new Promise((resolve) => setTimeout(resolve, COMMAND_ACK_POLL_MS))
-        .then(() => this.waitForDeviceCommand(code, value, baselineUpdatedAt, deadline));
+        .then(() => this.waitForDeviceCommand(code, value, baselineUpdatedAt, baselineStatus, deadline));
     });
   },
 
@@ -178,6 +210,7 @@ App({
         code,
         value,
         baselineUpdatedAt,
+        before.status || {},
         Date.now() + COMMAND_ACK_TIMEOUT_MS
       ).then((acknowledgement) => Object.assign({}, result, { acknowledgement })));
     });

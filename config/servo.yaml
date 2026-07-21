@@ -7,26 +7,29 @@ servo:
     polarity: normal
 
   timing:
-    # Standard servo PWM: 20 ms period, 50 Hz. / 标准舵机 PWM：20ms 周期，50Hz。
+    # 270-degree positional servo PWM: 20 ms period, 50 Hz.
+    # 270 度定位舵机 PWM：20ms 周期，50Hz。
     period_ns: 20000000
+    # Effective control range: 0.5ms=0deg, 1.0ms=135deg, 1.5ms=270deg.
+    # Values above 1.5ms are clamped to 270deg; the driver never emits >1.5ms.
     min_pulse_us: 500
-    neutral_pulse_us: 1500
-    max_pulse_us: 2500
+    neutral_pulse_us: 1000
+    max_pulse_us: 1500
 
   angle:
-    # 180 degree positional servo using signed offset scale:
-    # 500us=-90deg, 1500us=0deg, 2500us=90deg.
-    min_deg: -90.0
-    neutral_deg: 0.0
-    max_deg: 90.0
-    startup_deg: 0.0
+    # 500us=0deg, 1000us=135deg, 1500us=270deg.
+    min_deg: 0.0
+    neutral_deg: 135.0
+    max_deg: 270.0
+    startup_deg: 120.0
     step_deg: 30.0
     settle_s: 0.35
 
+  # Three physical sorting positions for the 270-degree positional servo.
   sorter:
-    center_deg: 45
     left_deg: 0
-    right_deg: 90
+    center_deg: 120
+    right_deg: 240
 
   auto_sort:
     enabled: true

@@ -122,8 +122,6 @@ class AutoSorter:
                 time.sleep(remaining)
 
         cmd = ["python3", str(self.sorter_script), position, "--config", str(self.config_path)]
-        if self.reset_to_center and position != "2":
-            cmd.append("--hold-after-move")
         try:
             result = subprocess.run(cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=5)
             message = (result.stdout or result.stderr or "").strip()

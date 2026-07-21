@@ -56,7 +56,10 @@
     <view class="card">
       <view class="card-head">
         <view class="card-title"><text class="card-ico">🌿</text>环境监测</view>
-        <view class="tag tag-{{envStatus.class}}">{{envStatus.display}}</view>
+        <view class="env-head-actions">
+          <view class="tag tag-{{envStatus.class}}">{{envStatus.display}}</view>
+          <view class="env-trend-link" bindtap="openEnvironmentPage">趋势 ›</view>
+        </view>
       </view>
       <view class="env-grid">
         <view class="env-tile" wx:for="{{environment}}" wx:key="code">
@@ -66,6 +69,14 @@
             <view class="env-value">{{item.display}}</view>
           </view>
         </view>
+      </view>
+      <view class="env-alert env-alert-{{envAlert.class}}" bindtap="openEnvironmentPage">
+        <view class="env-alert-dot"></view>
+        <view class="env-alert-copy">
+          <view class="env-alert-title">{{envAlert.count ? envAlert.count + ' 项环境告警' : '环境状态正常'}}</view>
+          <view class="env-alert-summary">{{envAlert.summary}}</view>
+        </view>
+        <view class="env-alert-arrow">›</view>
       </view>
     </view>
 
@@ -100,6 +111,7 @@
     <view class="card">
       <view class="card-head">
         <view class="card-title"><text class="card-ico">🎛️</text>设备控制</view>
+        <view class="tag tag-{{detectState.class}}">检测 {{detectState.display}}</view>
       </view>
 
       <view class="ctrl-block">
@@ -153,6 +165,7 @@
         <button class="btn btn-{{item.kind}}" wx:for="{{detectOptions}}" wx:key="value"
                 data-value="{{item.value}}" bindtap="onDetectTap">{{item.label}}</button>
       </view>
+      <view class="detect-result" wx:if="{{detectState.result}}">{{detectState.result}}</view>
     </view>
 
     <view class="footer">RK3588 · 端侧 AI 视觉质检系统</view>

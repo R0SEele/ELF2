@@ -20,6 +20,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QResizeEvent>
+#include <QSaveFile>
 #include <QScrollArea>
 #include <QSizePolicy>
 #include <QSpacerItem>
@@ -43,7 +44,6 @@ const char *kDefaultVoiceEdgeVoice = "zh-CN-XiaoxiaoNeural";
 const char *kDefaultVoiceAlsaDevice = "plughw:2,0";
 const char *kMotorCommandScript = "/home/elf/projects/src/hardware/motor/conveyor_cli.py";
 const char *kLedCommandScript = "/home/elf/projects/src/hardware/led/ws2812b.py";
-const char *kServoCommandScript = "/home/elf/projects/src/hardware/servo/sorter.py";
 const char *kProjectTitle = "芒果端侧AI视觉质检与智能分拣系统";
 const char *kLogoPath = "/home/elf/projects/logo.jpeg";
 const char *kTuyaIotElf = "/home/elf/projects/iot/TuyaOpen/apps/tuya_cloud/fruit_quality_cloud/dist/fruit_quality_cloud_0.1.0/fruit_quality_cloud_0.1.0.elf";
@@ -625,8 +625,6 @@ MainWindow::MainWindow(QWidget *parent)
       m_voicePromptProcess(new QProcess(this)),
       m_cameraProcess(new QProcess(this)),
       m_motorCommandProcess(new QProcess(this)),
-      m_servoCommandProcess(new QProcess(this)),
-      m_servoCommandTimer(new QTimer(this)),
       m_tuyaIotProcess(new QProcess(this)),
       m_iotStatusTimer(new QTimer(this)),
       m_controlStateTimer(new QTimer(this)),
@@ -689,11 +687,6 @@ MainWindow::MainWindow(QWidget *parent)
       m_voicePromptStatusLabel(nullptr),
       m_voicePreviousButton(nullptr),
       m_voiceBatchButton(nullptr),
-      m_servoStatusLabel(nullptr),
-      m_servoPosition1Button(nullptr),
-      m_servoPosition2Button(nullptr),
-      m_servoPosition3Button(nullptr),
-      m_servoCommandTimedOut(false),
       m_conveyorDirection(0),
       m_conveyorMinSpeedX10(1),
       m_conveyorMaxSpeedX10(10),
@@ -707,7 +700,9 @@ MainWindow::MainWindow(QWidget *parent)
       m_ledWasStarted(false),
       m_conveyorWasStarted(false),
       m_tuyaIotStartedByQt(false),
-      m_shutdownDone(false)
+      m_shutdownDone(false),
+      m_autoSortButton(nullptr),
+      m_autoSortEnabled(true)
 {
     setWindowTitle(kProjectTitle);
     setMinimumSize(0, 0);
@@ -739,62 +734,6 @@ MainWindow::MainWindow(QWidget *parent)
             static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
             this,
             &MainWindow::handleMangoQualityFinished);
-
-    m_servoCommandTimer->setSingleShot(true);
-    connect(m_servoCommandTimer, &QTimer::timeout, this, [this]() {
-        if (m_servoCommandProcess->state() == QProcess::NotRunning) {
-            return;
-        }
-        m_servoCommandTimedOut = true;
-        m_servoCommandProcess->kill();
-    });
-    connect(m_servoCommandProcess,
-            &QProcess::errorOccurred,
-            this,
-            [this](QProcess::ProcessError error) {
-                if (error != QProcess::FailedToStart) {
-                    return;
-                }
-                m_servoCommandTimer->stop();
-                if (m_servoPosition1Button) {
-                    m_servoPosition1Button->setEnabled(true);
-                    m_servoPosition2Button->setEnabled(true);
-                    m_servoPosition3Button->setEnabled(true);
-                }
-                if (m_servoStatusLabel) {
-                    m_servoStatusLabel->setText("状态：舵机命令启动失败");
-                }
-            });
-    connect(m_servoCommandProcess,
-            static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
-            this,
-            [this](int exitCode, QProcess::ExitStatus exitStatus) {
-                m_servoCommandTimer->stop();
-                const QString output = QString::fromLocal8Bit(
-                    m_servoCommandProcess->readAllStandardOutput()).trimmed();
-                const QString error = QString::fromLocal8Bit(
-                    m_servoCommandProcess->readAllStandardError()).trimmed();
-
-                if (m_servoPosition1Button) {
-                    m_servoPosition1Button->setEnabled(true);
-                    m_servoPosition2Button->setEnabled(true);
-                    m_servoPosition3Button->setEnabled(true);
-                }
-                if (m_servoStatusLabel) {
-                    if (m_servoCommandTimedOut) {
-                        m_servoStatusLabel->setText("状态：舵机命令超时");
-                    } else if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-                        m_servoStatusLabel->setText(
-                            output.isEmpty()
-                                ? "状态：已旋转到 " + m_servoCommandLabel
-                                : "状态：" + output);
-                    } else {
-                        const QString message = !error.isEmpty() ? error : output;
-                        m_servoStatusLabel->setText("状态：舵机命令失败 " + message.left(140));
-                    }
-                }
-                m_servoCommandTimedOut = false;
-            });
 
     m_voicePromptProcess->setProcessChannelMode(QProcess::MergedChannels);
     connect(m_voicePromptProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::readVoicePromptMessages);
@@ -865,11 +804,7 @@ void MainWindow::shutdownHardware()
         m_motorCommandProcess->kill();
         m_motorCommandProcess->waitForFinished(500);
     }
-    m_servoCommandTimer->stop();
-    if (m_servoCommandProcess->state() != QProcess::NotRunning) {
-        m_servoCommandProcess->kill();
-        m_servoCommandProcess->waitForFinished(500);
-    }
+    updateDetectionState("idle", "检测已停止");
 }
 
 void MainWindow::showWorkPage()
@@ -882,6 +817,12 @@ void MainWindow::showWorkPage()
     }
     startCameraProcess();
     startMangoQualityProcess();
+    if (m_cameraProcess->state() != QProcess::NotRunning
+        && m_mangoQualityProcess->state() != QProcess::NotRunning) {
+        updateDetectionState("running", "检测已启动");
+    } else {
+        updateDetectionState("failed", "相机或融合程序启动失败");
+    }
     refreshMangoQualityData();
     if (!m_mangoQualityTimer->isActive()) {
         m_mangoQualityTimer->start();
@@ -932,13 +873,6 @@ void MainWindow::showMangoQualityPage()
     refreshMangoQualityData();
 }
 
-void MainWindow::showServoControlPage()
-{
-    if (m_functionPages) {
-        m_functionPages->setCurrentIndex(5);
-    }
-}
-
 void MainWindow::showBatchStatsPage()
 {
     if (m_functionPages) {
@@ -958,7 +892,7 @@ void MainWindow::showEnvironmentTrendPage()
 void MainWindow::showVoicePromptPage()
 {
     if (m_functionPages) {
-        m_functionPages->setCurrentIndex(6);
+        m_functionPages->setCurrentIndex(5);
     }
 }
 
@@ -1462,7 +1396,7 @@ void MainWindow::refreshMangoHistoryData()
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         m_historyTable->setRowCount(0);
         if (m_historySummaryLabel) {
-            m_historySummaryLabel->setText("已检测 0 个芒果");
+            m_historySummaryLabel->setText("最近 0 条质检记录");
         }
         return;
     }
@@ -1521,7 +1455,7 @@ void MainWindow::refreshMangoHistoryData()
     }
 
     if (m_historySummaryLabel) {
-        m_historySummaryLabel->setText(QString("已检测 %1 个芒果").arg(rows.size()));
+        m_historySummaryLabel->setText(QString("最近 %1 条质检记录").arg(rows.size()));
     }
 }
 
@@ -1576,12 +1510,14 @@ void MainWindow::handleMangoQualityFinished(int exitCode, QProcess::ExitStatus e
             message += "\n" + detail;
         }
         m_mangoQualityStatusLabel->setText(message);
+        updateDetectionState("failed", message);
     } else if (exitCode != 0) {
         QString message = QString("状态：三模态融合程序退出：%1").arg(exitCode);
         if (!detail.isEmpty()) {
             message += "\n" + detail;
         }
         m_mangoQualityStatusLabel->setText(message);
+        updateDetectionState("failed", message);
     }
 }
 
@@ -1661,12 +1597,14 @@ void MainWindow::handleCameraFinished(int exitCode, QProcess::ExitStatus exitSta
             message += "\n" + detail;
         }
         setVideoMessage(message);
+        updateDetectionState("failed", message);
     } else if (exitCode != 0) {
         QString message = QString("检测程序已退出\n退出码：%1").arg(exitCode);
         if (!detail.isEmpty()) {
             message += "\n" + detail;
         }
         setVideoMessage(message);
+        updateDetectionState("failed", message);
     } else {
         setVideoMessage("检测程序已停止");
     }
@@ -1746,6 +1684,36 @@ QJsonObject MainWindow::readExternalControlState() const
     return document.object();
 }
 
+void MainWindow::updateExternalControlState(const QJsonObject &patch)
+{
+    QJsonObject state = readExternalControlState();
+    for (auto it = patch.constBegin(); it != patch.constEnd(); ++it) {
+        state.insert(it.key(), it.value());
+    }
+
+    QSaveFile file(kControlStateJsonFile);
+    if (!file.open(QIODevice::WriteOnly)) {
+        return;
+    }
+    file.write(QJsonDocument(state).toJson(QJsonDocument::Indented));
+    file.commit();
+}
+
+void MainWindow::updateDetectionState(const QString &status, const QString &result)
+{
+    QJsonObject patch;
+    patch.insert("detect_status", status);
+    patch.insert("detect_result", result.left(240));
+
+    const QString previousError = readExternalControlState().value("error_message").toString();
+    if (status == "failed") {
+        patch.insert("error_message", "detect: " + result.left(220));
+    } else if (previousError.startsWith("detect:")) {
+        patch.insert("error_message", "");
+    }
+    updateExternalControlState(patch);
+}
+
 void MainWindow::initializeExternalControlState()
 {
     const QJsonObject state = readExternalControlState();
@@ -1756,6 +1724,50 @@ void MainWindow::initializeExternalControlState()
 void MainWindow::syncExternalControlState()
 {
     const QJsonObject state = readExternalControlState();
+
+    if (m_motorCommandProcess->state() == QProcess::NotRunning) {
+        const QString conveyorCommand = state.value("conveyor_cmd").toString().trimmed().toLower();
+        if (conveyorCommand == "forward") {
+            m_conveyorDirection = 1;
+            m_conveyorWasStarted = true;
+        } else if (conveyorCommand == "reverse") {
+            m_conveyorDirection = -1;
+            m_conveyorWasStarted = true;
+        } else if (conveyorCommand == "stop") {
+            m_conveyorDirection = 0;
+            m_conveyorWasStarted = false;
+        }
+        updateConveyorRunButtons();
+
+        const QString conveyorSpeed = state.value("conveyor_speed").toString().trimmed().toLower();
+        if (conveyorSpeed == "slow") {
+            m_conveyorSpeedGear = 0;
+        } else if (conveyorSpeed == "fast") {
+            m_conveyorSpeedGear = 2;
+        } else if (conveyorSpeed == "medium") {
+            m_conveyorSpeedGear = 1;
+        }
+        updateConveyorGearButtons();
+    }
+
+    if (state.contains("led_brightness")) {
+        m_ledCurrentBrightness = qBound(0, state.value("led_brightness").toInt(), 100);
+        if (m_ledBrightnessSlider) {
+            m_ledBrightnessSlider->setValue(m_ledCurrentBrightness);
+        }
+    }
+    if (state.contains("led_switch")) {
+        m_ledWasStarted = state.value("led_switch").toBool();
+    }
+
+    if (state.contains("auto_sort_enable")) {
+        m_autoSortEnabled = state.value("auto_sort_enable").toBool(true);
+        if (m_autoSortButton) {
+            m_autoSortButton->setChecked(m_autoSortEnabled);
+            m_autoSortButton->setText(m_autoSortEnabled ? "自动分拣  开" : "自动分拣  关");
+        }
+    }
+
     const QString requestId = state.value("detect_request_id").toString().trimmed();
     if (requestId.isEmpty() || requestId == m_lastDetectRequestId) {
         return;
@@ -1764,12 +1776,8 @@ void MainWindow::syncExternalControlState()
     const QString command = state.value("detect_cmd").toString().trimmed().toLower();
     m_lastDetectRequestId = requestId;
 
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (command == m_lastDetectCommand && now - m_lastDetectCommandAtMs < 1500) {
-        return;
-    }
     m_lastDetectCommand = command;
-    m_lastDetectCommandAtMs = now;
+    m_lastDetectCommandAtMs = QDateTime::currentMSecsSinceEpoch();
 
     if (command == "start") {
         m_shutdownDone = false;
@@ -1781,6 +1789,12 @@ void MainWindow::syncExternalControlState()
         if (m_mangoQualityStatusLabel) {
             m_mangoQualityStatusLabel->setText("状态：远程检测已启动");
         }
+        if (m_cameraProcess->state() != QProcess::NotRunning
+            && m_mangoQualityProcess->state() != QProcess::NotRunning) {
+            updateDetectionState("running", "检测已启动");
+        } else {
+            updateDetectionState("failed", "相机或融合程序启动失败");
+        }
         return;
     }
 
@@ -1790,6 +1804,7 @@ void MainWindow::syncExternalControlState()
         if (m_mangoQualityStatusLabel) {
             m_mangoQualityStatusLabel->setText("状态：远程检测已停止");
         }
+        updateDetectionState("idle", "检测已停止");
         return;
     }
 
@@ -1798,6 +1813,7 @@ void MainWindow::syncExternalControlState()
             if (m_mangoQualityStatusLabel) {
                 m_mangoQualityStatusLabel->setText("状态：抓拍失败，当前没有检测画面");
             }
+            updateDetectionState("failed", "抓拍失败，当前没有检测画面");
             return;
         }
 
@@ -1806,6 +1822,7 @@ void MainWindow::syncExternalControlState()
             if (m_mangoQualityStatusLabel) {
                 m_mangoQualityStatusLabel->setText("状态：抓拍目录创建失败");
             }
+            updateDetectionState("failed", "抓拍目录创建失败");
             return;
         }
 
@@ -1818,6 +1835,8 @@ void MainWindow::syncExternalControlState()
                 ? "状态：抓拍已保存 " + fileName
                 : "状态：抓拍保存失败");
         }
+        updateDetectionState(saved ? "snapshot_done" : "failed",
+                             saved ? "抓拍已保存 " + fileName : "抓拍保存失败");
     }
 }
 
@@ -1880,7 +1899,7 @@ QWidget *MainWindow::createMangoHistoryPage()
     header->addWidget(title);
     header->addWidget(backButton, 0, Qt::AlignRight);
 
-    m_historySummaryLabel = new QLabel("已检测 0 个芒果");
+    m_historySummaryLabel = new QLabel("最近 0 条质检记录");
     m_historySummaryLabel->setObjectName("historySummary");
 
     m_historyTable = new QTableWidget;
@@ -2048,7 +2067,6 @@ QFrame *MainWindow::createFunctionPlaceholder()
     m_functionPages->addWidget(createLedControlPage());
     m_functionPages->addWidget(createMangoQualityPage());
     m_functionPages->addWidget(createBatchStatsPage());
-    m_functionPages->addWidget(createServoControlPage());
     m_functionPages->addWidget(createVoicePromptPage());
 
     layout->addWidget(title);
@@ -2079,11 +2097,17 @@ QWidget *MainWindow::createFunctionHomePage()
     ledButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(ledButton, &QPushButton::clicked, this, &MainWindow::showLedControlPage);
 
-    QPushButton *servoButton = new QPushButton("舵机分拣");
-    servoButton->setObjectName("featureButton_purple");
-    servoButton->setFixedHeight(58);
-    servoButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(servoButton, &QPushButton::clicked, this, &MainWindow::showServoControlPage);
+    // 自动分拣开关：开启时才根据芒果等级/建议流向自动触发舵机分拣，关闭时不分拣。
+    m_autoSortButton = new QPushButton;
+    m_autoSortButton->setObjectName("switchButton");
+    m_autoSortButton->setCheckable(true);
+    m_autoSortButton->setFixedHeight(58);
+    m_autoSortButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(m_autoSortButton, &QPushButton::clicked, this, &MainWindow::toggleAutoSort);
+    // 初始状态从控制状态 JSON 读取（默认开启），不回写以免覆盖其它字段。
+    m_autoSortEnabled = readExternalControlState().value("auto_sort_enable").toBool(true);
+    m_autoSortButton->setChecked(m_autoSortEnabled);
+    m_autoSortButton->setText(m_autoSortEnabled ? "自动分拣  开" : "自动分拣  关");
 
     QPushButton *mangoButton = new QPushButton("当前芒果");
     mangoButton->setObjectName("featureButton_green");
@@ -2115,7 +2139,7 @@ QWidget *MainWindow::createFunctionHomePage()
     environmentTrendButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(environmentTrendButton, &QPushButton::clicked, this, &MainWindow::showEnvironmentTrendPage);
 
-    layout->addWidget(makeFunctionSection("实时使用", {conveyorButton, ledButton, servoButton}));
+    layout->addWidget(makeFunctionSection("实时使用", {m_autoSortButton, conveyorButton, ledButton}));
     layout->addWidget(makeFunctionGridSection("数据查看", {mangoButton, batchButton, environmentTrendButton, voiceButton, historyButton}, 2));
     layout->addStretch(1);
     return page;
@@ -2461,67 +2485,6 @@ QWidget *MainWindow::createMangoQualityPage()
 
     layout->addWidget(m_mangoQualityStatusLabel);
     layout->addWidget(m_mangoReasonLabel);
-    layout->addStretch(1);
-
-    return page;
-}
-
-QWidget *MainWindow::createServoControlPage()
-{
-    QWidget *page = new QWidget;
-    page->setMinimumSize(0, 0);
-    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
-    QVBoxLayout *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(10);
-
-    QPushButton *backButton = new QPushButton("返回功能区");
-    backButton->setObjectName("secondaryButton");
-    backButton->setMinimumHeight(46);
-    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
-
-    QLabel *title = new QLabel("自动分拣");
-    title->setObjectName("controlTitle");
-
-    QLabel *description = new QLabel("自动根据芒果等级与建议流向触发舵机，手动按钮仅用于调试。");
-    description->setObjectName("motorStatus");
-    description->setWordWrap(true);
-
-    QHBoxLayout *positionLayout = new QHBoxLayout;
-    positionLayout->setSpacing(1);
-
-    m_servoPosition1Button = new QPushButton("1号\n左位");
-    m_servoPosition1Button->setObjectName("segmentLeft");
-    m_servoPosition1Button->setCheckable(true);
-    m_servoPosition1Button->setMinimumHeight(74);
-    connect(m_servoPosition1Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition1);
-
-    m_servoPosition2Button = new QPushButton("2号\n中位");
-    m_servoPosition2Button->setObjectName("segmentMiddle");
-    m_servoPosition2Button->setCheckable(true);
-    m_servoPosition2Button->setMinimumHeight(74);
-    connect(m_servoPosition2Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition2);
-
-    m_servoPosition3Button = new QPushButton("3号\n右位");
-    m_servoPosition3Button->setObjectName("segmentRight");
-    m_servoPosition3Button->setCheckable(true);
-    m_servoPosition3Button->setMinimumHeight(74);
-    connect(m_servoPosition3Button, &QPushButton::clicked, this, &MainWindow::moveServoToPosition3);
-
-    positionLayout->addWidget(m_servoPosition1Button);
-    positionLayout->addWidget(m_servoPosition2Button);
-    positionLayout->addWidget(m_servoPosition3Button);
-
-    m_servoStatusLabel = new QLabel("状态：自动分拣已接入融合程序");
-    m_servoStatusLabel->setObjectName("motorStatus");
-    m_servoStatusLabel->setWordWrap(true);
-    m_servoStatusLabel->setMinimumHeight(56);
-
-    layout->addWidget(backButton);
-    layout->addWidget(title);
-    layout->addWidget(description);
-    layout->addLayout(positionLayout);
-    layout->addWidget(m_servoStatusLabel);
     layout->addStretch(1);
 
     return page;
@@ -3663,10 +3626,24 @@ QString MainWindow::currentConveyorGearName() const
     return "二档 中";
 }
 
+QString MainWindow::currentConveyorSpeedCode() const
+{
+    if (m_conveyorSpeedGear == 0) {
+        return "slow";
+    }
+    if (m_conveyorSpeedGear == 2) {
+        return "fast";
+    }
+    return "medium";
+}
+
 void MainWindow::selectConveyorSpeedGear(int gear)
 {
     m_conveyorSpeedGear = qMax(0, qMin(2, gear));
     updateConveyorGearButtons();
+    QJsonObject patch;
+    patch.insert("conveyor_speed", currentConveyorSpeedCode());
+    updateExternalControlState(patch);
     applyConveyorSpeed();
 }
 
@@ -3765,6 +3742,7 @@ void MainWindow::runMotorCommand(const QString &command)
     const QString displayCommand = command;
     const double displaySpeed = currentConveyorSpeed();
     const QString displayGear = currentConveyorGearName();
+    const QString displaySpeedCode = currentConveyorSpeedCode();
 
     if (m_motorStatusLabel) {
         if (command == "forward") {
@@ -3797,7 +3775,7 @@ void MainWindow::runMotorCommand(const QString &command)
     connect(process,
             static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
             this,
-            [this, process, displayCommand, displaySpeed, displayGear](int exitCode, QProcess::ExitStatus exitStatus) {
+            [this, process, displayCommand, displaySpeed, displayGear, displaySpeedCode](int exitCode, QProcess::ExitStatus exitStatus) {
                 const QString output = QString::fromLocal8Bit(process->readAllStandardOutput()).trimmed();
                 const QString error = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
 
@@ -3806,6 +3784,14 @@ void MainWindow::runMotorCommand(const QString &command)
                 }
 
                 if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                    QJsonObject patch;
+                    patch.insert("conveyor_cmd", displayCommand);
+                    patch.insert("conveyor_speed", displaySpeedCode);
+                    const QString previousError = readExternalControlState().value("error_message").toString();
+                    if (previousError.startsWith("motor:")) {
+                        patch.insert("error_message", "");
+                    }
+                    updateExternalControlState(patch);
                     if (displayCommand == "forward") {
                         m_motorStatusLabel->setText(QString("状态：正转 %1 %2 m/s")
                                                     .arg(displayGear)
@@ -3820,6 +3806,9 @@ void MainWindow::runMotorCommand(const QString &command)
                 } else {
                     const QString message = !error.isEmpty() ? error : output;
                     m_motorStatusLabel->setText("状态：命令失败 " + message.left(80));
+                    QJsonObject patch;
+                    patch.insert("error_message", "motor: " + message.left(220));
+                    updateExternalControlState(patch);
                 }
             });
 }
@@ -3919,46 +3908,24 @@ void MainWindow::loadConveyorSpeedRange()
     }
 }
 
-void MainWindow::moveServoToPosition1()
+void MainWindow::toggleAutoSort()
 {
-    if (m_servoPosition1Button) {
-        m_servoPosition1Button->setChecked(true);
-    }
-    if (m_servoPosition2Button) {
-        m_servoPosition2Button->setChecked(false);
-    }
-    if (m_servoPosition3Button) {
-        m_servoPosition3Button->setChecked(false);
-    }
-    runServoCommand("1", "1号 左位");
+    setAutoSort(!m_autoSortEnabled);
 }
 
-void MainWindow::moveServoToPosition2()
+void MainWindow::setAutoSort(bool enabled)
 {
-    if (m_servoPosition1Button) {
-        m_servoPosition1Button->setChecked(false);
+    m_autoSortEnabled = enabled;
+    if (m_autoSortButton) {
+        m_autoSortButton->setChecked(enabled);
+        m_autoSortButton->setText(enabled ? "自动分拣  开" : "自动分拣  关");
     }
-    if (m_servoPosition2Button) {
-        m_servoPosition2Button->setChecked(true);
-    }
-    if (m_servoPosition3Button) {
-        m_servoPosition3Button->setChecked(false);
-    }
-    runServoCommand("2", "2号 中位");
-}
 
-void MainWindow::moveServoToPosition3()
-{
-    if (m_servoPosition1Button) {
-        m_servoPosition1Button->setChecked(false);
-    }
-    if (m_servoPosition2Button) {
-        m_servoPosition2Button->setChecked(false);
-    }
-    if (m_servoPosition3Button) {
-        m_servoPosition3Button->setChecked(true);
-    }
-    runServoCommand("3", "3号 右位");
+    // 把开关状态写入共享控制状态 JSON：融合程序 mango_quality_cli 会按对象实时读取
+    // auto_sort_enable，开启时才触发舵机分拣，关闭时不分拣。
+    QJsonObject patch;
+    patch.insert("auto_sort_enable", enabled);
+    updateExternalControlState(patch);
 }
 
 void MainWindow::runVoicePromptCommand(const QString &target, const QString &label)
@@ -4017,34 +3984,6 @@ void MainWindow::runVoicePromptCommand(const QString &target, const QString &lab
             m_voicePromptStatusLabel->setText("状态：语音评价程序启动失败");
         }
     }
-}
-
-void MainWindow::runServoCommand(const QString &position, const QString &label)
-{
-    if (m_servoCommandProcess->state() != QProcess::NotRunning) {
-        if (m_servoStatusLabel) {
-            m_servoStatusLabel->setText("状态：舵机正在执行上一条命令，请稍候");
-        }
-        return;
-    }
-
-    if (m_servoStatusLabel) {
-        m_servoStatusLabel->setText("状态：正在旋转到 " + label);
-    }
-    if (m_servoPosition1Button) {
-        m_servoPosition1Button->setEnabled(false);
-        m_servoPosition2Button->setEnabled(false);
-        m_servoPosition3Button->setEnabled(false);
-    }
-
-    QStringList args;
-    args << kServoCommandScript << position;
-
-    m_servoCommandLabel = label;
-    m_servoCommandTimedOut = false;
-    m_servoCommandProcess->setWorkingDirectory("/home/elf/projects");
-    m_servoCommandProcess->start("python3", args);
-    m_servoCommandTimer->start(4000);
 }
 
 QStringList MainWindow::parseCsvLine(const QString &line) const
@@ -4292,8 +4231,19 @@ void MainWindow::runLedCommand(int brightnessPct)
 
     if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
         m_ledStatusLabel->setText(QString("状态：白光亮度 %1%").arg(brightnessPct));
+        QJsonObject patch;
+        patch.insert("led_switch", brightnessPct > 0);
+        patch.insert("led_brightness", qMax(0, brightnessPct));
+        const QString previousError = readExternalControlState().value("error_message").toString();
+        if (previousError.startsWith("led:")) {
+            patch.insert("error_message", "");
+        }
+        updateExternalControlState(patch);
     } else {
         const QString message = !error.isEmpty() ? error : output;
         m_ledStatusLabel->setText("状态：LED命令失败 " + message.left(100));
+        QJsonObject patch;
+        patch.insert("error_message", "led: " + message.left(220));
+        updateExternalControlState(patch);
     }
 }

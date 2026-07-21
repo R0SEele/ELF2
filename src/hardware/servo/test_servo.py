@@ -67,7 +67,7 @@ def main() -> int:
     angle = _clamp(startup_angle(), calibration.min_deg, calibration.max_deg)
 
     print("Keyboard servo test started")
-    print("keys: Q/q=-30deg, E/e=+30deg, 0=center, A=left(-45deg), D=right(45deg), X/x=exit")
+    print("keys: Q/q=-step, E/e=+step, A=left(0deg), S=center(120deg), D=right(240deg), X/x=exit")
     print(
         "pwm=pwmchip{} pwm{} range={:.1f}..{:.1f}deg step={:.1f}deg".format(
             servo.driver.pwm.chip,
@@ -100,7 +100,7 @@ def main() -> int:
                 actual = servo.move_to(angle)
                 print(f"angle={actual:.1f}deg")
                 continue
-            if key == "0":
+            if key in ("s", "S"):
                 actual = servo.center()
                 angle = actual
                 print(f"center angle={actual:.1f}deg")

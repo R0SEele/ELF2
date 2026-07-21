@@ -1,0 +1,80 @@
+<view class="page">
+  <view class="topbar">
+    <view>
+      <view class="title">环境趋势分析</view>
+      <view class="subtitle">
+        <text class="status-dot {{connected ? 'online' : ''}}"></text>
+        {{connected ? '设备在线' : '设备未连接'}} · {{lastUpdated}}
+      </view>
+    </view>
+    <view class="sample-count">{{sampleCount}} 个采样点</view>
+  </view>
+
+  <scroll-view class="content" scroll-y="true">
+    <scroll-view class="metric-scroll" scroll-x="true" enhanced="true" show-scrollbar="false">
+      <view class="metric-tabs">
+        <view class="metric-tab {{index === metricIndex ? 'active' : ''}}"
+              wx:for="{{metrics}}" wx:key="code"
+              data-index="{{index}}" bindtap="onMetricTap">{{item.label}}</view>
+      </view>
+    </scroll-view>
+
+    <view class="summary-grid">
+      <view class="summary-item primary">
+        <view class="summary-label">当前</view>
+        <view class="summary-value">{{current}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">最低</view>
+        <view class="summary-value compact">{{minimum}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">最高</view>
+        <view class="summary-value compact">{{maximum}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">平均</view>
+        <view class="summary-value compact">{{average}}</view>
+      </view>
+    </view>
+
+    <view class="chart-section">
+      <view class="range-row">
+        <view class="range-options">
+          <view class="range-option {{index === rangeIndex ? 'active' : ''}}"
+                wx:for="{{ranges}}" wx:key="value"
+                data-index="{{index}}" bindtap="onRangeTap">{{item.label}}</view>
+        </view>
+        <view class="rule">规则 {{activeRule}}</view>
+      </view>
+      <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+      <view class="chart-legend">
+        <view class="legend-item"><view class="threshold-line"></view>告警阈值</view>
+        <view>本机缓存 · 24小时</view>
+      </view>
+    </view>
+
+    <view class="alarm-section">
+      <view class="section-head">
+        <view class="section-title">当前告警</view>
+        <view class="alarm-count {{alarms.length ? 'has-alarm' : ''}}">{{alarms.length}}</view>
+      </view>
+      <view class="normal-state" wx:if="{{!alarms.length}}">
+        <view class="normal-icon">✓</view>
+        <view>
+          <view class="normal-title">环境状态正常</view>
+          <view class="normal-copy">当前数据未触发演示告警规则</view>
+        </view>
+      </view>
+      <view class="alarm-list" wx:else>
+        <view class="alarm-item alarm-{{item.level}}" wx:for="{{alarms}}" wx:key="code">
+          <view class="alarm-marker"></view>
+          <view>
+            <view class="alarm-title">{{item.label}}异常</view>
+            <view class="alarm-message">{{item.message}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+</view>

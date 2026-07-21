@@ -6,9 +6,9 @@ const DP_META = {
   humidity_rh: { label: "湿度", group: "environment", type: "value", scale: 1, unit: "%RH" },
   co2_ppm: { label: "CO2", group: "environment", type: "value", unit: "ppm" },
   light_lux: { label: "光照", group: "environment", type: "value", unit: "lux" },
-  air_quality_ppm: { label: "空气质量", group: "environment", type: "value", unit: "ppm" },
+  air_quality_ppm: { label: "空气质量相对值", group: "environment", type: "value", unit: "%" },
   env_status: {
-    label: "环境状态",
+    label: "传感器状态",
     group: "environment",
     type: "enum",
     enum: { normal: "正常", partial_error: "部分异常", error: "异常", unknown: "未知" }
@@ -46,7 +46,7 @@ const DP_META = {
   yolo_label: { label: "YOLO结果", group: "quality", type: "string" },
   yolo_confidence: { label: "YOLO置信度", group: "quality", type: "value", scale: 1, unit: "%" },
   data_status: { label: "数据状态", group: "quality", type: "string" },
-  last_update: { label: "更新时间", group: "quality", type: "string" },
+  last_update: { label: "品质更新时间", group: "quality", type: "string" },
   suggested_channel: {
     label: "建议通道",
     group: "quality",
@@ -88,6 +88,22 @@ const DP_META = {
     enum: { idle: "空闲", start: "开始", stop: "停止", snapshot: "抓拍" }
   },
   auto_sort_enable: { label: "自动分拣", group: "control", type: "bool", writable: true },
+  detect_request_id: { label: "检测请求号", group: "control", type: "string" },
+  detect_status: {
+    label: "检测状态",
+    group: "control",
+    type: "enum",
+    enum: {
+      idle: "空闲",
+      starting: "启动中",
+      running: "运行中",
+      stopping: "停止中",
+      snapshotting: "抓拍中",
+      snapshot_done: "抓拍完成",
+      failed: "失败"
+    }
+  },
+  detect_result: { label: "检测执行结果", group: "control", type: "string" },
   device_status: {
     label: "设备状态",
     group: "device",

@@ -188,7 +188,7 @@ class SensorDataReader { SensorSnapshot readLatest() const; ... };
 
 - **传送带** `runMotorCommand`：`forward/reverse/stop`；非 stop 追加 `--speed-ms <档位速度>`。三档 `m_conveyorSpeedGear` 0/1/2 → `0.10/0.13/0.16`（`loadConveyorSpeedRange()` 解析 `motor.yaml` 的 `conveyor:` 段覆盖）。成员进程 `m_motorCommandProcess` 异步，临时 connect `finished` 更新状态标签。
 - **LED** `runLedCommand`：`ws2812b.py set --brightness <pct>` 或 `off`。局部 `QProcess` 同步（`waitForFinished(3000)`）。**自动调光** `updateLedAutoControl()`：`readLatestLightLux()` 取 `light_lux` → 一阶低通（α=0.35）→ 误差超死区 100lx 按 300/600lx 分档步进 1/3/5 调亮度（0–100），间隔 ≥4500ms。
-- **舵机** `runServoCommand`：`sorter.py <position>`，同步 `waitForFinished(4000)`。位置 `"1"(1号-45度)/"2"(2号0度)/"3"(3号45度)`。
+- **舵机** `runServoCommand`：`sorter.py <position>`，同步 `waitForFinished(4000)`。位置 `"1"(1号0度)/"2"(2号120度)/"3"(3号240度)`。
 
 ### 涂鸦 IoT 进程与网络状态
 
