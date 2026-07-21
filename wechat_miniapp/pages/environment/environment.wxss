@@ -198,6 +198,14 @@
   border-top: 2rpx dashed var(--danger);
 }
 
+.history-range {
+  margin-top: 8rpx;
+  text-align: right;
+  font-size: 21rpx;
+  color: var(--ink-3);
+  word-break: break-all;
+}
+
 .section-head {
   display: flex;
   align-items: center;

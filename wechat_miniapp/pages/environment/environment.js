@@ -4,7 +4,8 @@ const environmentHistory = require("../../utils/environmentHistory");
 const RANGE_OPTIONS = [
   { label: "10分钟", value: 10 },
   { label: "1小时", value: 60 },
-  { label: "24小时", value: 1440 }
+  { label: "24小时", value: 1440 },
+  { label: "7天", value: 10080 }
 ];
 
 Page({
@@ -14,12 +15,14 @@ Page({
     metrics: environmentHistory.METRICS,
     metricIndex: 0,
     ranges: RANGE_OPTIONS,
-    rangeIndex: 1,
+    rangeIndex: 3,
     current: "--",
     minimum: "--",
     maximum: "--",
     average: "--",
     sampleCount: 0,
+    historySource: "本机缓存",
+    historyRange: "暂无记录",
     activeRule: environmentHistory.METRICS[0].rule,
     alarms: [],
     empty: true
@@ -30,6 +33,7 @@ Page({
   },
 
   onShow() {
+    this.loadCloudHistory();
     this.startPolling();
   },
 
@@ -74,6 +78,24 @@ Page({
       clearInterval(this.timer);
       this.timer = null;
     }
+  },
+
+  loadCloudHistory() {
+    if (!app.globalData.useCloud) {
+      this.setData({ historySource: "本机缓存" });
+      return;
+    }
+    app.requestEnvironmentHistory(10080)
+      .then((payload) => {
+        this.cloudHistory = payload.points || [];
+        environmentHistory.mergeCloudPoints(payload.points || []);
+        this.setData({ historySource: "云端历史" });
+        this.renderTrend();
+      })
+      .catch(() => {
+        this.setData({ historySource: "本机缓存" });
+        this.renderTrend();
+      });
   },
 
   refreshStatus() {
@@ -129,12 +151,34 @@ Page({
     if (!metric || !range) {
       return;
     }
-    const points = environmentHistory.pointsFor(metric.code, range.value);
+    const points = this.combinedPointsFor(metric.code, range.value);
     this.updateSummary(points, metric);
     if (!this.context || !this.canvasWidth || !this.canvasHeight) {
       return;
     }
     this.drawChart(this.downsamplePoints(points, 420), metric);
+  },
+
+  combinedPointsFor(code, rangeMinutes) {
+    const byTimestamp = {};
+    (this.cloudHistory || []).forEach((record) => {
+      const timestamp = Number(record.timestamp);
+      const value = Number((record.values || {})[code]);
+      if (Number.isFinite(timestamp) && Number.isFinite(value)) {
+        byTimestamp[timestamp] = { timestamp, value };
+      }
+    });
+    environmentHistory.pointsFor(code, 0).forEach((point) => {
+      byTimestamp[point.timestamp] = point;
+    });
+    const allPoints = Object.keys(byTimestamp)
+      .map((timestamp) => byTimestamp[timestamp])
+      .sort((left, right) => left.timestamp - right.timestamp);
+    if (!allPoints.length) {
+      return [];
+    }
+    const cutoff = allPoints[allPoints.length - 1].timestamp - rangeMinutes * 60 * 1000;
+    return allPoints.filter((point) => point.timestamp >= cutoff);
   },
 
   downsamplePoints(points, limit) {
@@ -172,6 +216,7 @@ Page({
         maximum: "--",
         average: "--",
         sampleCount: 0,
+        historyRange: "暂无记录",
         empty: true
       });
       return;
@@ -184,6 +229,7 @@ Page({
       maximum: environmentHistory.formatValue(Math.max.apply(null, values), metric),
       average: environmentHistory.formatValue(sum / values.length, metric),
       sampleCount: points.length,
+      historyRange: `${this.formatHistoryTime(points[0].timestamp)} 至 ${this.formatHistoryTime(points[points.length - 1].timestamp)}`,
       empty: false
     });
   },
@@ -261,7 +307,8 @@ Page({
     points.forEach((point, index) => {
       const x = xAt(point.timestamp);
       const y = yAt(point.value);
-      if (index === 0) ctx.moveTo(x, y);
+      const previous = index > 0 ? points[index - 1] : null;
+      if (!previous || point.timestamp - previous.timestamp > 15 * 60 * 1000) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
@@ -283,7 +330,17 @@ Page({
   formatAxisTime(timestamp) {
     const date = new Date(timestamp);
     const pad = (value) => String(value).padStart(2, "0");
+    const range = RANGE_OPTIONS[this.data.rangeIndex];
+    if (range && range.value >= 1440) {
+      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
     return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  },
+
+  formatHistoryTime(timestamp) {
+    const date = new Date(timestamp);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   },
 
   formatTime(timestamp) {

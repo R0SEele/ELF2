@@ -86,6 +86,41 @@ function writeHistory(points) {
   }
 }
 
+function mergeCloudPoints(points) {
+  const mergedByTimestamp = {};
+  readHistory().forEach((point) => {
+    mergedByTimestamp[Number(point.timestamp)] = point;
+  });
+  (points || []).forEach((point) => {
+    const timestamp = normalizedTimestamp(point && point.timestamp);
+    const sourceValues = (point && point.values) || {};
+    const values = {};
+    METRICS.forEach((metric) => {
+      const value = Number(sourceValues[metric.code]);
+      if (Number.isFinite(value)) {
+        values[metric.code] = value;
+      }
+    });
+    if (timestamp > 0 && Object.keys(values).length) {
+      mergedByTimestamp[timestamp] = {
+        timestamp,
+        values,
+        envStatus: String(point.env_status || point.envStatus || "unknown")
+      };
+    }
+  });
+  const cutoff = Date.now() - RETENTION_MS;
+  let merged = Object.keys(mergedByTimestamp)
+    .map((timestamp) => mergedByTimestamp[timestamp])
+    .filter((point) => Number(point.timestamp) >= cutoff)
+    .sort((left, right) => Number(left.timestamp) - Number(right.timestamp));
+  if (merged.length > MAX_POINTS) {
+    merged = merged.slice(merged.length - MAX_POINTS);
+  }
+  writeHistory(merged);
+  return merged;
+}
+
 function sameValues(left, right) {
   return METRICS.every((metric) => Number(left[metric.code]) === Number(right[metric.code]));
 }
@@ -202,6 +237,7 @@ module.exports = {
   evaluateAlarms,
   formatValue,
   latestAlarms,
+  mergeCloudPoints,
   pointsFor,
   readHistory,
   recordPayload

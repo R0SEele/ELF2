@@ -50,8 +50,9 @@
       <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
       <view class="chart-legend">
         <view class="legend-item"><view class="threshold-line"></view>告警阈值</view>
-        <view>本机缓存 · 24小时</view>
+        <view>{{historySource}}</view>
       </view>
+      <view class="history-range">{{historyRange}}</view>
     </view>
 
     <view class="alarm-section">

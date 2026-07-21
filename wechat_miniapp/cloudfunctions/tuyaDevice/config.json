@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "openapi": []
+  },
+  "triggers": [
+    {
+      "name": "environmentHistoryCollector",
+      "type": "timer",
+      "config": "0 */5 * * * * *"
+    }
+  ]
+}

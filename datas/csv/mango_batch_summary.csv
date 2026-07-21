@@ -1,2 +1,2 @@
 timestamp,batch_id,total_count,unripe_count,ripe_count,overripe_count,grade_a_count,grade_b_count,grade_c_count,reject_count,saleable_count,saleable_ratio,rot_risk_count,rot_risk_ratio,channel_sales_count,channel_ripen_count,channel_process_count,channel_recheck_count,channel_reject_count,last_mango_id,last_quality_grade,last_suggested_channel,last_maturity_label,last_final_status,last_timestamp
-2026-07-19 09:38:07,20260716_103735,235,57,113,65,50,6,118,61,50,21.28,179,76.17,50,5,1,118,61,235,C级,复检通道,成熟,需要复检,2026-07-19 09:36:07
+2026-07-21 16:52:05,20260716_103735,235,57,113,65,50,6,118,61,50,21.28,179,76.17,50,5,1,118,61,235,C级,复检通道,成熟,需要复检,2026-07-19 09:36:07

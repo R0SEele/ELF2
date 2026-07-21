@@ -102,21 +102,7 @@ App({
         ? { action, access_token: this.globalData.accessToken }
         : { action, command: options.data || {}, access_token: this.globalData.accessToken };
 
-      return new Promise((resolve, reject) => {
-        wx.cloud.callFunction({
-          name: "tuyaDevice",
-          data,
-          success: (res) => {
-            const result = res.result || {};
-            if (result.ok !== false) {
-              resolve(result);
-            } else {
-              reject(result);
-            }
-          },
-          fail: reject
-        });
-      });
+      return this.callTuyaCloudFunction(data);
     }
 
     const base = (this.globalData.apiBase || "").replace(/\/$/, "");
@@ -141,6 +127,35 @@ App({
 
   requestDeviceStatus() {
     return this.request("/api/device/status");
+  },
+
+  callTuyaCloudFunction(data) {
+    return new Promise((resolve, reject) => {
+      wx.cloud.callFunction({
+        name: "tuyaDevice",
+        data,
+        success: (res) => {
+          const result = res.result || {};
+          if (result.ok !== false) {
+            resolve(result);
+          } else {
+            reject(result);
+          }
+        },
+        fail: reject
+      });
+    });
+  },
+
+  requestEnvironmentHistory(rangeMinutes = 10080) {
+    if (!this.globalData.useCloud) {
+      return Promise.reject({ error: "本地代理模式不提供云端环境历史" });
+    }
+    return this.callTuyaCloudFunction({
+      action: "environment_history",
+      range_minutes: rangeMinutes,
+      access_token: this.globalData.accessToken
+    });
   },
 
   waitForDeviceCommand(code, value, baselineUpdatedAt, baselineStatus, deadline) {

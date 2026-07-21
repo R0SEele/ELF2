@@ -1,5 +1,20 @@
 const crypto = require("crypto");
 const https = require("https");
+const cloud = require("wx-server-sdk");
+
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
+
+const database = cloud.database();
+const dbCommand = database.command;
+const ENVIRONMENT_COLLECTION = "environment_history";
+const ENVIRONMENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const ENVIRONMENT_CODES = [
+  "temperature_c",
+  "humidity_rh",
+  "co2_ppm",
+  "light_lux",
+  "air_quality_ppm"
+];
 
 const DP_META = {
   temperature_c: { label: "温度", group: "environment", type: "value", scale: 1, unit: "℃" },
@@ -318,6 +333,166 @@ async function getStatus() {
   return buildStatusPayload(cfg.deviceId, properties);
 }
 
+function normalizeTimestamp(value) {
+  const timestamp = Number(value || 0);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return 0;
+  }
+  return timestamp < 1000000000000 ? timestamp * 1000 : timestamp;
+}
+
+function environmentRecord(payload) {
+  const environmentItems = ((payload.groups || {}).environment || []);
+  const itemByCode = {};
+  environmentItems.forEach((item) => {
+    itemByCode[item.code] = item;
+  });
+
+  const values = {};
+  ENVIRONMENT_CODES.forEach((code) => {
+    const item = itemByCode[code];
+    const value = item ? Number(item.value) : NaN;
+    if (Number.isFinite(value)) {
+      values[code] = value;
+    }
+  });
+  if (!Object.keys(values).length) {
+    return null;
+  }
+
+  const statusUpdatedAt = payload.status_updated_at || {};
+  const timestamps = ENVIRONMENT_CODES
+    .map((code) => normalizeTimestamp(statusUpdatedAt[code]))
+    .filter((timestamp) => timestamp > 0);
+  const timestamp = timestamps.length ? Math.max(...timestamps) : Date.now();
+  const envStatusItem = itemByCode.env_status;
+  const envStatus = envStatusItem
+    ? String(envStatusItem.raw_value || envStatusItem.value || "unknown")
+    : "unknown";
+
+  return {
+    device_id: payload.device_id,
+    timestamp,
+    values,
+    env_status: envStatus
+  };
+}
+
+async function saveEnvironmentSnapshot(payload) {
+  const record = environmentRecord(payload);
+  if (!record) {
+    return { ok: false, error: "No valid environment values" };
+  }
+
+  const collection = database.collection(ENVIRONMENT_COLLECTION);
+  const latestResult = await collection
+    .where({ device_id: record.device_id })
+    .orderBy("timestamp", "desc")
+    .limit(1)
+    .get();
+  const latest = (latestResult.data || [])[0];
+  if (latest && Number(latest.timestamp) >= record.timestamp) {
+    return {
+      ok: true,
+      source: "cloud_history",
+      recorded: false,
+      timestamp: record.timestamp,
+      reason: "duplicate"
+    };
+  }
+
+  await collection.add({
+    data: Object.assign({}, record, { created_at: database.serverDate() })
+  });
+
+  if (Math.floor(record.timestamp / 60000) % 60 === 0) {
+    await collection.where({
+      device_id: record.device_id,
+      timestamp: dbCommand.lt(Date.now() - ENVIRONMENT_RETENTION_MS)
+    }).remove();
+  }
+
+  return {
+    ok: true,
+    source: "cloud_history",
+    recorded: true,
+    timestamp: record.timestamp
+  };
+}
+
+async function collectEnvironmentSnapshot() {
+  const payload = await getStatus();
+  if (!payload.ok) {
+    return payload;
+  }
+  return saveEnvironmentSnapshot(payload);
+}
+
+async function getEnvironmentHistory(rangeMinutes) {
+  const cfg = config();
+  const minutes = Math.max(10, Math.min(10080, Math.trunc(Number(rangeMinutes) || 60)));
+  const latestResult = await database.collection(ENVIRONMENT_COLLECTION)
+    .where({ device_id: cfg.deviceId })
+    .orderBy("timestamp", "desc")
+    .limit(1)
+    .get();
+  const latest = (latestResult.data || [])[0];
+  if (!latest) {
+    return {
+      ok: true,
+      source: "cloud_history",
+      device_id: cfg.deviceId,
+      range_minutes: minutes,
+      start_at: 0,
+      end_at: 0,
+      points: []
+    };
+  }
+  const endTimestamp = Number(latest.timestamp);
+  const cutoff = endTimestamp - minutes * 60 * 1000;
+  const pageSize = 500;
+  const points = [];
+  let offset = 0;
+
+  while (true) {
+    const result = await database.collection(ENVIRONMENT_COLLECTION)
+      .where({
+        device_id: cfg.deviceId,
+        timestamp: dbCommand.gte(cutoff)
+      })
+      .orderBy("timestamp", "asc")
+      .skip(offset)
+      .limit(pageSize)
+      .get();
+    const page = result.data || [];
+    page.forEach((record) => {
+      points.push({
+        timestamp: Number(record.timestamp),
+        values: record.values || {},
+        env_status: record.env_status || "unknown"
+      });
+    });
+    if (page.length < pageSize) {
+      break;
+    }
+    offset += page.length;
+  }
+
+  return {
+    ok: true,
+    source: "cloud_history",
+    device_id: cfg.deviceId,
+    range_minutes: minutes,
+    start_at: points.length ? points[0].timestamp : 0,
+    end_at: points.length ? points[points.length - 1].timestamp : 0,
+    points
+  };
+}
+
+function isTimerEvent(event) {
+  return String((event || {}).Type || (event || {}).type || "").toLowerCase() === "timer";
+}
+
 function validateCommand(command) {
   const code = String(command.code || "");
   const meta = DP_META[code];
@@ -362,12 +537,22 @@ async function sendCommand(command) {
 
 exports.main = async (event) => {
   try {
+    event = event || {};
+    if (isTimerEvent(event)) {
+      return await collectEnvironmentSnapshot();
+    }
     const expectedToken = process.env.APP_ACCESS_TOKEN || "";
     if (expectedToken && event.access_token !== expectedToken) {
       return { ok: false, error: "访问口令错误" };
     }
     if (event.action === "status") {
       return await getStatus();
+    }
+    if (event.action === "environment_history") {
+      return await getEnvironmentHistory(event.range_minutes);
+    }
+    if (event.action === "collect_environment") {
+      return await collectEnvironmentSnapshot();
     }
     if (event.action === "command") {
       return await sendCommand(event.command || event);
