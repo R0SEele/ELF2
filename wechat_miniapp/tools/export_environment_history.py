@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = PROJECT_ROOT / "datas" / "csv" / "sensor_realtime.csv"
-DEFAULT_OUTPUT = PROJECT_ROOT / "datas" / "import" / "environment_history_7d.json"
+DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "import" / "environment_history_7d.json"
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "tuya_cloud.json"
 VALUE_FIELDS = (
     "temperature_c",

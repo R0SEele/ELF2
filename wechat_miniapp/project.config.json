@@ -3,6 +3,23 @@
   "projectname": "mango-quality-tuya",
   "miniprogramRoot": "./",
   "cloudfunctionRoot": "cloudfunctions/",
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "docs"
+      },
+      {
+        "type": "folder",
+        "value": "import"
+      },
+      {
+        "type": "folder",
+        "value": "tools"
+      }
+    ],
+    "include": []
+  },
   "setting": {
     "urlCheck": false,
     "es6": true,
