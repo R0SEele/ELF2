@@ -103,6 +103,11 @@ const DP_META = {
     enum: { idle: "空闲", start: "开始", stop: "停止", snapshot: "抓拍" }
   },
   auto_sort_enable: { label: "自动分拣", group: "control", type: "bool", writable: true },
+  fan_switch: { label: "通风风扇", group: "control", type: "bool", writable: true },
+  fan_auto_enable: { label: "自动通风", group: "control", type: "bool", writable: true },
+  fan_temperature_threshold: { label: "风扇温度阈值", group: "control", type: "value", unit: "℃", writable: true },
+  fan_humidity_threshold: { label: "风扇湿度阈值", group: "control", type: "value", unit: "%RH", writable: true },
+  fan_auto_reason: { label: "自动通风原因", group: "control", type: "string" },
   detect_request_id: { label: "检测请求号", group: "control", type: "string" },
   detect_status: {
     label: "检测状态",
@@ -515,6 +520,12 @@ function validateCommand(command) {
       throw new Error(`${code} expects number`);
     }
     if (code === "led_brightness") {
+      value = Math.max(0, Math.min(100, Math.trunc(value)));
+    }
+    if (code === "fan_temperature_threshold") {
+      value = Math.max(0, Math.min(60, Math.trunc(value)));
+    }
+    if (code === "fan_humidity_threshold") {
       value = Math.max(0, Math.min(100, Math.trunc(value)));
     }
   }

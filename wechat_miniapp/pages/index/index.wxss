@@ -161,6 +161,62 @@
   font-size: 30rpx;
 }
 
+.fan-panel {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx 4rpx;
+  border: 1rpx solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #f8faf9;
+}
+
+.fan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+}
+
+.fan-reason {
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 21rpx;
+  text-align: right;
+  word-break: break-all;
+}
+
+.compact-row {
+  min-height: 78rpx;
+}
+
+.fan-thresholds {
+  display: flex;
+  gap: 16rpx;
+  padding: 14rpx 0 18rpx;
+}
+
+.fan-threshold {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  color: var(--ink-2);
+  font-size: 21rpx;
+}
+
+.fan-threshold input {
+  width: 78rpx;
+  height: 50rpx;
+  box-sizing: border-box;
+  padding: 0 8rpx;
+  border: 1rpx solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--ink);
+  text-align: center;
+  font-size: 23rpx;
+}
+
 /* ---------- 设置面板（折叠） ---------- */
 .settings-panel {
   margin: 0 24rpx;

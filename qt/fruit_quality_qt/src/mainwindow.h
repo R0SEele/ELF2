@@ -143,6 +143,7 @@ private slots:
     void showFunctionHomePage();
     void showConveyorControlPage();
     void showLedControlPage();
+    void showFanControlPage();
     void showMangoQualityPage();
     void showBatchStatsPage();
     void showEnvironmentTrendPage();
@@ -179,6 +180,13 @@ private slots:
     void turnLedOff();
     void toggleLedAutoMode();
     void updateLedAutoControl();
+    void updateFanTemperatureThresholdLabel(int value);
+    void updateFanHumidityThresholdLabel(int value);
+    void applyFanThresholds();
+    void turnFanOn();
+    void turnFanOff();
+    void toggleFanAutoMode();
+    void updateFanAutoControl();
     void toggleAutoSort();
 
 private:
@@ -191,6 +199,7 @@ private:
     QWidget *createFunctionHomePage();
     QWidget *createConveyorControlPage();
     QWidget *createLedControlPage();
+    QWidget *createFanControlPage();
     QWidget *createMangoQualityPage();
     QWidget *createBatchStatsPage();
     QWidget *createEnvironmentTrendPage();
@@ -232,7 +241,9 @@ private:
     void loadConveyorSpeedRange();
     QStringList parseCsvLine(const QString &line) const;
     int readLatestLightLux() const;
+    double readLatestEnvironmentValue(const QString &column) const;
     void runLedCommand(int brightnessPct);
+    void runFanCommand(const QString &command);
     void setAutoSort(bool enabled);
     void runVoicePromptCommand(const QString &target, const QString &label);
 
@@ -254,6 +265,7 @@ private:
     QProcess *m_cameraProcess;
     QProcess *m_motorCommandProcess;
     QProcess *m_tuyaIotProcess;
+    QTimer *m_fanAutoTimer;
     QTimer *m_iotStatusTimer;
     QTimer *m_controlStateTimer;
     QNetworkAccessManager *m_iotNetworkManager;
@@ -284,6 +296,17 @@ private:
     double m_ledFilteredLux;
     bool m_ledHasFilteredLux;
     qint64 m_ledLastAutoAdjustMs;
+    QSlider *m_fanTemperatureThresholdSlider;
+    QSlider *m_fanHumidityThresholdSlider;
+    QLabel *m_fanTemperatureThresholdValueLabel;
+    QLabel *m_fanHumidityThresholdValueLabel;
+    QLabel *m_fanTemperatureValueLabel;
+    QLabel *m_fanHumidityValueLabel;
+    QLabel *m_fanStatusLabel;
+    QLabel *m_fanReasonLabel;
+    QPushButton *m_fanOnButton;
+    QPushButton *m_fanOffButton;
+    QPushButton *m_fanAutoButton;
     QLabel *m_mangoMaturityValueLabel;
     QLabel *m_mangoSugarValueLabel;
     QLabel *m_mangoRotValueLabel;
@@ -331,6 +354,8 @@ private:
     double m_conveyorFastSpeedMs;
     int m_ledCurrentBrightness;
     bool m_ledAutoEnabled;
+    bool m_fanAutoEnabled;
+    bool m_fanWasStarted;
     bool m_ledWasStarted;
     bool m_conveyorWasStarted;
     bool m_tuyaIotStartedByQt;

@@ -1,0 +1,18 @@
+fan:
+  enabled: true
+  # GPIO3_B3 = bank 3, group B, bit 3. On RK3588 this is global GPIO 107,
+  # which is line 11 of the gpio3 character device.
+  chip: "/dev/gpiochip3"
+  line_offset: 11
+  gpio_name: "GPIO3_B3"
+  consumer: "fruit-quality-ventilation-fan"
+  active_high: true
+  auto:
+    # The fan starts when either value reaches its on threshold.
+    temperature_on_c: 30.0
+    humidity_on_rh: 75.0
+    # Both values must fall below the off thresholds before the fan stops.
+    temperature_off_c: 29.0
+    humidity_off_rh: 72.0
+  state_file: "/home/elf/projects/datas/csv/tuya_proxy_control_state.json"
+  sensor_file: "/home/elf/projects/datas/csv/sensor_realtime.csv"

@@ -18,6 +18,15 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "datas" / "csv"
 DEFAULT_FILE_NAME = "sensor_realtime.csv"
+FAN_MODULE_DIR = PROJECT_ROOT / "src" / "hardware" / "fan"
+
+if str(FAN_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(FAN_MODULE_DIR))
+try:
+    from ventilation_fan import automatic_control, load_config
+except ImportError:
+    automatic_control = None
+    load_config = None
 CSV_FIELDS = [
     "temperature_c",
     "humidity_rh",
@@ -45,6 +54,14 @@ def _fmt(value, digits=2):
     if isinstance(value, float):
         return f"{value:.{digits}f}"
     return str(value)
+
+
+def _number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number else None
 
 
 def _payload(readings, name):
@@ -188,6 +205,12 @@ def main():
         monitor = EnvironmentMonitor(sensors_cfg=sensors_cfg)
         _ensure_header(csv_path)
         scd40_cache = {}
+        fan_config = None
+        if load_config is not None:
+            try:
+                fan_config = load_config()
+            except Exception as exc:
+                print(f"fan config unavailable: {exc}", file=sys.stderr)
 
         sample_index = 0
         while _running:
@@ -200,6 +223,11 @@ def main():
                 scd40_cache=scd40_cache,
                 scd40_cache_max_age_s=scd40_cache_max_age_s,
             )
+            if automatic_control is not None and fan_config is not None:
+                try:
+                    automatic_control(fan_config, _number(row["temperature_c"]), _number(row["humidity_rh"]))
+                except Exception as exc:
+                    print(f"fan automatic control error: {exc}", file=sys.stderr)
             _append_row(csv_path, row)
             print(f"updated {csv_path} #{sample_index}", file=sys.stderr, flush=True)
 

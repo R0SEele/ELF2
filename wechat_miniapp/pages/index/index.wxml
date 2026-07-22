@@ -146,6 +146,35 @@
         <switch checked="{{ledOn}}" color="#2fb37a" bindchange="onLedSwitch" />
       </view>
 
+      <view class="fan-panel">
+        <view class="fan-head">
+          <view class="ctrl-label inline">通风风扇</view>
+          <text class="fan-reason">{{fanReason}}</text>
+        </view>
+        <view class="switch-row compact-row">
+          <view class="ctrl-label inline">手动开关</view>
+          <switch checked="{{fanOn}}" disabled="{{fanAuto}}" color="#2fb37a" bindchange="onFanSwitch" />
+        </view>
+        <view class="switch-row compact-row">
+          <view class="ctrl-label inline">温湿度自动通风</view>
+          <switch checked="{{fanAuto}}" color="#2fb37a" bindchange="onFanAutoChange" />
+        </view>
+        <view class="fan-thresholds">
+          <view class="fan-threshold">
+            <text>温度阈值</text>
+            <input type="number" value="{{fanTemperatureThreshold}}" data-code="fan_temperature_threshold"
+                   bindblur="onFanThresholdBlur" />
+            <text>℃</text>
+          </view>
+          <view class="fan-threshold">
+            <text>湿度阈值</text>
+            <input type="number" value="{{fanHumidityThreshold}}" data-code="fan_humidity_threshold"
+                   bindblur="onFanThresholdBlur" />
+            <text>%RH</text>
+          </view>
+        </view>
+      </view>
+
       <view class="slider-row">
         <view class="slider-head">
           <text class="ctrl-label inline">亮度</text>

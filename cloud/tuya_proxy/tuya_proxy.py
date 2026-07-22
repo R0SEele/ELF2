@@ -126,6 +126,23 @@ DP_META: dict[str, dict[str, Any]] = {
         "enum": {"idle": "空闲", "start": "开始", "stop": "停止", "snapshot": "抓拍"},
     },
     "auto_sort_enable": {"label": "自动分拣", "group": "control", "type": "bool", "writable": True},
+    "fan_switch": {"label": "通风风扇", "group": "control", "type": "bool", "writable": True},
+    "fan_auto_enable": {"label": "自动通风", "group": "control", "type": "bool", "writable": True},
+    "fan_temperature_threshold": {
+        "label": "风扇温度阈值",
+        "group": "control",
+        "type": "value",
+        "unit": "℃",
+        "writable": True,
+    },
+    "fan_humidity_threshold": {
+        "label": "风扇湿度阈值",
+        "group": "control",
+        "type": "value",
+        "unit": "%RH",
+        "writable": True,
+    },
+    "fan_auto_reason": {"label": "自动通风原因", "group": "control", "type": "string"},
     "detect_request_id": {"label": "检测请求号", "group": "control", "type": "string"},
     "detect_status": {
         "label": "检测状态",
@@ -170,6 +187,11 @@ DEFAULT_CONTROL_STATUS: dict[str, Any] = {
     "detect_status": "idle",
     "detect_result": "",
     "auto_sort_enable": True,
+    "fan_switch": False,
+    "fan_auto_enable": False,
+    "fan_temperature_threshold": 30,
+    "fan_humidity_threshold": 75,
+    "fan_auto_reason": "手动模式",
 }
 
 DEFAULT_CONVEYOR_SPEEDS = {
@@ -503,6 +525,11 @@ def apply_control_commands(status: dict[str, Any], commands: list[dict[str, Any]
             next_status["device_status"] = "idle"
         elif code == "conveyor_cmd" and value in {"forward", "reverse"}:
             next_status["device_status"] = "running"
+        if code == "fan_switch":
+            next_status["fan_auto_enable"] = False
+            next_status["fan_auto_reason"] = "手动开启" if value else "手动关闭"
+        elif code == "fan_auto_enable":
+            next_status["fan_auto_reason"] = "自动模式，等待环境数据" if value else "手动模式"
     return next_status
 
 
@@ -676,6 +703,21 @@ def run_local_command(command: dict[str, Any], control_state: dict[str, Any]) ->
             brightness = int(control_state.get("led_brightness") or 40)
             args = ["python3", str(PROJECT_ROOT / "src/hardware/led/ws2812b.py"), "set", "--brightness", str(brightness)]
         subprocess.run(args, check=True, timeout=8)
+    elif code == "fan_switch":
+        fan_script = PROJECT_ROOT / "src/hardware/fan/ventilation_fan.py"
+        subprocess.run(
+            ["python3", str(fan_script), "on" if value else "off"],
+            check=True,
+            timeout=8,
+        )
+    elif code in {"fan_auto_enable", "fan_temperature_threshold", "fan_humidity_threshold"}:
+        if control_state.get("fan_auto_enable"):
+            fan_script = PROJECT_ROOT / "src/hardware/fan/ventilation_fan.py"
+            subprocess.run(
+                ["python3", str(fan_script), "auto"],
+                check=True,
+                timeout=8,
+            )
     elif code == "auto_sort_enable":
         return
     elif code == "detect_cmd":
@@ -702,6 +744,10 @@ def validate_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if not isinstance(value, (int, float)):
                 raise ProxyError(f"{code} expects number", 400)
             if code == "led_brightness":
+                value = max(0, min(100, int(value)))
+            elif code == "fan_temperature_threshold":
+                value = max(0, min(60, int(value)))
+            elif code == "fan_humidity_threshold":
                 value = max(0, min(100, int(value)))
         clean_commands.append({"code": code, "value": value})
     return clean_commands
@@ -747,6 +793,11 @@ def mock_tuya_response() -> dict[str, Any]:
             {"code": "detect_request_id", "value": "mock-1"},
             {"code": "detect_status", "value": "idle"},
             {"code": "detect_result", "value": ""},
+            {"code": "fan_switch", "value": False},
+            {"code": "fan_auto_enable", "value": False},
+            {"code": "fan_temperature_threshold", "value": 30},
+            {"code": "fan_humidity_threshold", "value": 75},
+            {"code": "fan_auto_reason", "value": "手动模式"},
         ],
     }
 
@@ -826,6 +877,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 previous_state = read_control_state()
                 control_state = apply_control_commands(previous_state, commands)
                 try:
+                    # Make the desired mode/thresholds visible to the fan helper before it evaluates auto mode.
+                    write_control_state(control_state)
                     for command in commands:
                         run_local_command(command, control_state)
                     write_control_state(control_state)

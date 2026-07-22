@@ -31,6 +31,8 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <numeric>
 
 namespace {
@@ -44,6 +46,7 @@ const char *kDefaultVoiceEdgeVoice = "zh-CN-XiaoxiaoNeural";
 const char *kDefaultVoiceAlsaDevice = "plughw:2,0";
 const char *kMotorCommandScript = "/home/elf/projects/src/hardware/motor/conveyor_cli.py";
 const char *kLedCommandScript = "/home/elf/projects/src/hardware/led/ws2812b.py";
+const char *kFanCommandScript = "/home/elf/projects/src/hardware/fan/ventilation_fan.py";
 const char *kProjectTitle = "芒果端侧AI视觉质检与智能分拣系统";
 const char *kLogoPath = "/home/elf/projects/logo.jpeg";
 const char *kTuyaIotElf = "/home/elf/projects/iot/TuyaOpen/apps/tuya_cloud/fruit_quality_cloud/dist/fruit_quality_cloud_0.1.0/fruit_quality_cloud_0.1.0.elf";
@@ -61,6 +64,7 @@ const int kEnvironmentSampleIntervalS = 5;
 const qint64 kEnvironmentTrendBucketMs = 10LL * 1000LL;
 const int kSensorRefreshIntervalMs = 5000;
 const int kLedAutoIntervalMs = 5000;
+const int kFanAutoIntervalMs = 5000;
 const int kLedAutoMinAdjustGapMs = 4500;
 const int kIotStatusIntervalMs = 5000;
 const int kIotNetworkTimeoutMs = 4000;
@@ -626,6 +630,7 @@ MainWindow::MainWindow(QWidget *parent)
       m_cameraProcess(new QProcess(this)),
       m_motorCommandProcess(new QProcess(this)),
       m_tuyaIotProcess(new QProcess(this)),
+      m_fanAutoTimer(new QTimer(this)),
       m_iotStatusTimer(new QTimer(this)),
       m_controlStateTimer(new QTimer(this)),
       m_iotNetworkManager(new QNetworkAccessManager(this)),
@@ -652,6 +657,17 @@ MainWindow::MainWindow(QWidget *parent)
       m_ledFilteredLux(0.0),
       m_ledHasFilteredLux(false),
       m_ledLastAutoAdjustMs(0),
+      m_fanTemperatureThresholdSlider(nullptr),
+      m_fanHumidityThresholdSlider(nullptr),
+      m_fanTemperatureThresholdValueLabel(nullptr),
+      m_fanHumidityThresholdValueLabel(nullptr),
+      m_fanTemperatureValueLabel(nullptr),
+      m_fanHumidityValueLabel(nullptr),
+      m_fanStatusLabel(nullptr),
+      m_fanReasonLabel(nullptr),
+      m_fanOnButton(nullptr),
+      m_fanOffButton(nullptr),
+      m_fanAutoButton(nullptr),
       m_mangoMaturityValueLabel(nullptr),
       m_mangoSugarValueLabel(nullptr),
       m_mangoRotValueLabel(nullptr),
@@ -697,6 +713,8 @@ MainWindow::MainWindow(QWidget *parent)
       m_conveyorFastSpeedMs(0.16),
       m_ledCurrentBrightness(40),
       m_ledAutoEnabled(false),
+      m_fanAutoEnabled(false),
+      m_fanWasStarted(false),
       m_ledWasStarted(false),
       m_conveyorWasStarted(false),
       m_tuyaIotStartedByQt(false),
@@ -769,6 +787,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_ledAutoTimer, &QTimer::timeout, this, &MainWindow::updateLedAutoControl);
     m_ledAutoTimer->setInterval(kLedAutoIntervalMs);
+    connect(m_fanAutoTimer, &QTimer::timeout, this, &MainWindow::updateFanAutoControl);
+    m_fanAutoTimer->setInterval(kFanAutoIntervalMs);
 }
 
 MainWindow::~MainWindow()
@@ -785,8 +805,12 @@ void MainWindow::shutdownHardware()
 
     m_shutdownDone = true;
     m_ledAutoTimer->stop();
+    m_fanAutoTimer->stop();
     if (m_ledWasStarted) {
         turnLedOff();
+    }
+    if (m_fanWasStarted || m_fanAutoEnabled) {
+        turnFanOff();
     }
     stopConveyor();
     m_mangoQualityTimer->stop();
@@ -864,10 +888,17 @@ void MainWindow::showLedControlPage()
     }
 }
 
-void MainWindow::showMangoQualityPage()
+void MainWindow::showFanControlPage()
 {
     if (m_functionPages) {
         m_functionPages->setCurrentIndex(3);
+    }
+}
+
+void MainWindow::showMangoQualityPage()
+{
+    if (m_functionPages) {
+        m_functionPages->setCurrentIndex(4);
     }
     startMangoQualityProcess();
     refreshMangoQualityData();
@@ -876,7 +907,7 @@ void MainWindow::showMangoQualityPage()
 void MainWindow::showBatchStatsPage()
 {
     if (m_functionPages) {
-        m_functionPages->setCurrentIndex(4);
+        m_functionPages->setCurrentIndex(5);
     }
     refreshBatchStatsData();
 }
@@ -892,13 +923,23 @@ void MainWindow::showEnvironmentTrendPage()
 void MainWindow::showVoicePromptPage()
 {
     if (m_functionPages) {
-        m_functionPages->setCurrentIndex(5);
+        m_functionPages->setCurrentIndex(6);
     }
 }
 
 void MainWindow::refreshSensorData()
 {
     updateSensorCards(m_sensorReader.readLatest());
+    const double temperature = readLatestEnvironmentValue("temperature_c");
+    const double humidity = readLatestEnvironmentValue("humidity_rh");
+    if (m_fanTemperatureValueLabel) {
+        m_fanTemperatureValueLabel->setText(std::isfinite(temperature)
+            ? QString("%1 ℃").arg(temperature, 0, 'f', 1) : "-- ℃");
+    }
+    if (m_fanHumidityValueLabel) {
+        m_fanHumidityValueLabel->setText(std::isfinite(humidity)
+            ? QString("%1 %RH").arg(humidity, 0, 'f', 1) : "-- %RH");
+    }
     if (m_environmentTrendPage && m_pages->currentWidget() == m_environmentTrendPage) {
         refreshEnvironmentTrendData();
     }
@@ -1768,6 +1809,42 @@ void MainWindow::syncExternalControlState()
         }
     }
 
+    if (state.contains("fan_switch")) {
+        m_fanWasStarted = state.value("fan_switch").toBool();
+        if (m_fanOnButton) {
+            m_fanOnButton->setChecked(m_fanWasStarted);
+        }
+        if (m_fanOffButton) {
+            m_fanOffButton->setChecked(!m_fanWasStarted);
+        }
+    }
+    if (state.contains("fan_auto_enable")) {
+        m_fanAutoEnabled = state.value("fan_auto_enable").toBool();
+        if (m_fanAutoButton) {
+            m_fanAutoButton->setChecked(m_fanAutoEnabled);
+            m_fanAutoButton->setText(m_fanAutoEnabled ? "自动通风  开" : "自动通风  关");
+        }
+        if (m_fanAutoEnabled) {
+            if (!m_fanAutoTimer->isActive()) {
+                m_fanAutoTimer->start();
+            }
+        } else {
+            m_fanAutoTimer->stop();
+        }
+    }
+    if (state.contains("fan_temperature_threshold") && m_fanTemperatureThresholdSlider) {
+        m_fanTemperatureThresholdSlider->setValue(qBound(0, state.value("fan_temperature_threshold").toInt(), 60));
+    }
+    if (state.contains("fan_humidity_threshold") && m_fanHumidityThresholdSlider) {
+        m_fanHumidityThresholdSlider->setValue(qBound(0, state.value("fan_humidity_threshold").toInt(), 100));
+    }
+    if (m_fanReasonLabel && state.contains("fan_auto_reason")) {
+        m_fanReasonLabel->setText("原因：" + state.value("fan_auto_reason").toString());
+    }
+    if (m_fanStatusLabel) {
+        m_fanStatusLabel->setText(m_fanWasStarted ? "状态：风扇运行中" : "状态：风扇已停止");
+    }
+
     const QString requestId = state.value("detect_request_id").toString().trimmed();
     if (requestId.isEmpty() || requestId == m_lastDetectRequestId) {
         return;
@@ -2065,6 +2142,7 @@ QFrame *MainWindow::createFunctionPlaceholder()
     m_functionPages->addWidget(createFunctionHomePage());
     m_functionPages->addWidget(createConveyorControlPage());
     m_functionPages->addWidget(createLedControlPage());
+    m_functionPages->addWidget(createFanControlPage());
     m_functionPages->addWidget(createMangoQualityPage());
     m_functionPages->addWidget(createBatchStatsPage());
     m_functionPages->addWidget(createVoicePromptPage());
@@ -2096,6 +2174,12 @@ QWidget *MainWindow::createFunctionHomePage()
     ledButton->setFixedHeight(58);
     ledButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(ledButton, &QPushButton::clicked, this, &MainWindow::showLedControlPage);
+
+    QPushButton *fanButton = new QPushButton("通风风扇");
+    fanButton->setObjectName("featureButton_blue");
+    fanButton->setFixedHeight(58);
+    fanButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(fanButton, &QPushButton::clicked, this, &MainWindow::showFanControlPage);
 
     // 自动分拣开关：开启时才根据芒果等级/建议流向自动触发舵机分拣，关闭时不分拣。
     m_autoSortButton = new QPushButton;
@@ -2139,7 +2223,7 @@ QWidget *MainWindow::createFunctionHomePage()
     environmentTrendButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(environmentTrendButton, &QPushButton::clicked, this, &MainWindow::showEnvironmentTrendPage);
 
-    layout->addWidget(makeFunctionSection("实时使用", {m_autoSortButton, conveyorButton, ledButton}));
+    layout->addWidget(makeFunctionSection("实时使用", {m_autoSortButton, conveyorButton, ledButton, fanButton}));
     layout->addWidget(makeFunctionGridSection("数据查看", {mangoButton, batchButton, environmentTrendButton, voiceButton, historyButton}, 2));
     layout->addStretch(1);
     return page;
@@ -2361,6 +2445,134 @@ QWidget *MainWindow::createLedControlPage()
 
     updateLedBrightnessLabel(m_ledBrightnessSlider->value());
     updateLedThresholdLabel(m_ledThresholdSlider->value());
+    return page;
+}
+
+QWidget *MainWindow::createFanControlPage()
+{
+    QWidget *page = new QWidget;
+    page->setMinimumSize(0, 0);
+    page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    QVBoxLayout *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(12);
+
+    QPushButton *backButton = new QPushButton("返回功能区");
+    backButton->setObjectName("secondaryButton");
+    backButton->setMinimumHeight(46);
+    connect(backButton, &QPushButton::clicked, this, &MainWindow::showFunctionHomePage);
+
+    QLabel *title = new QLabel("通风风扇控制");
+    title->setObjectName("controlTitle");
+
+    QFrame *sensorPanel = new QFrame;
+    sensorPanel->setObjectName("controlCard");
+    QHBoxLayout *sensorLayout = new QHBoxLayout(sensorPanel);
+    sensorLayout->setContentsMargins(12, 10, 12, 10);
+    sensorLayout->setSpacing(16);
+    QLabel *temperatureName = new QLabel("温度");
+    temperatureName->setObjectName("controlLabel");
+    m_fanTemperatureValueLabel = new QLabel("-- ℃");
+    m_fanTemperatureValueLabel->setObjectName("speedValue");
+    QLabel *humidityName = new QLabel("湿度");
+    humidityName->setObjectName("controlLabel");
+    m_fanHumidityValueLabel = new QLabel("-- %RH");
+    m_fanHumidityValueLabel->setObjectName("speedValue");
+    sensorLayout->addWidget(temperatureName);
+    sensorLayout->addWidget(m_fanTemperatureValueLabel, 1);
+    sensorLayout->addWidget(humidityName);
+    sensorLayout->addWidget(m_fanHumidityValueLabel, 1);
+
+    QFrame *thresholdPanel = new QFrame;
+    thresholdPanel->setObjectName("controlCard");
+    QVBoxLayout *thresholdLayout = new QVBoxLayout(thresholdPanel);
+    thresholdLayout->setContentsMargins(12, 10, 12, 12);
+    thresholdLayout->setSpacing(8);
+
+    QHBoxLayout *temperatureHeader = new QHBoxLayout;
+    QLabel *temperatureLabel = new QLabel("温度自动开启阈值");
+    temperatureLabel->setObjectName("controlLabel");
+    m_fanTemperatureThresholdValueLabel = new QLabel;
+    m_fanTemperatureThresholdValueLabel->setObjectName("speedValue");
+    m_fanTemperatureThresholdValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    temperatureHeader->addWidget(temperatureLabel);
+    temperatureHeader->addWidget(m_fanTemperatureThresholdValueLabel, 1);
+    m_fanTemperatureThresholdSlider = new QSlider(Qt::Horizontal);
+    m_fanTemperatureThresholdSlider->setObjectName("speedSlider");
+    m_fanTemperatureThresholdSlider->setRange(0, 60);
+    m_fanTemperatureThresholdSlider->setSingleStep(1);
+    m_fanTemperatureThresholdSlider->setPageStep(5);
+    m_fanTemperatureThresholdSlider->setValue(30);
+    connect(m_fanTemperatureThresholdSlider, &QSlider::valueChanged,
+            this, &MainWindow::updateFanTemperatureThresholdLabel);
+    connect(m_fanTemperatureThresholdSlider, &QSlider::sliderReleased,
+            this, &MainWindow::applyFanThresholds);
+
+    QHBoxLayout *humidityHeader = new QHBoxLayout;
+    QLabel *humidityLabel = new QLabel("湿度自动开启阈值");
+    humidityLabel->setObjectName("controlLabel");
+    m_fanHumidityThresholdValueLabel = new QLabel;
+    m_fanHumidityThresholdValueLabel->setObjectName("speedValue");
+    m_fanHumidityThresholdValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    humidityHeader->addWidget(humidityLabel);
+    humidityHeader->addWidget(m_fanHumidityThresholdValueLabel, 1);
+    m_fanHumidityThresholdSlider = new QSlider(Qt::Horizontal);
+    m_fanHumidityThresholdSlider->setObjectName("speedSlider");
+    m_fanHumidityThresholdSlider->setRange(0, 100);
+    m_fanHumidityThresholdSlider->setSingleStep(1);
+    m_fanHumidityThresholdSlider->setPageStep(5);
+    m_fanHumidityThresholdSlider->setValue(75);
+    connect(m_fanHumidityThresholdSlider, &QSlider::valueChanged,
+            this, &MainWindow::updateFanHumidityThresholdLabel);
+    connect(m_fanHumidityThresholdSlider, &QSlider::sliderReleased,
+            this, &MainWindow::applyFanThresholds);
+
+    thresholdLayout->addLayout(temperatureHeader);
+    thresholdLayout->addWidget(m_fanTemperatureThresholdSlider);
+    thresholdLayout->addLayout(humidityHeader);
+    thresholdLayout->addWidget(m_fanHumidityThresholdSlider);
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout->setSpacing(8);
+    m_fanOnButton = new QPushButton("手动开启");
+    m_fanOnButton->setObjectName("primaryControlButton");
+    m_fanOnButton->setCheckable(true);
+    m_fanOnButton->setMinimumHeight(64);
+    connect(m_fanOnButton, &QPushButton::clicked, this, &MainWindow::turnFanOn);
+    m_fanOffButton = new QPushButton("手动关闭");
+    m_fanOffButton->setObjectName("destructiveControlButton");
+    m_fanOffButton->setCheckable(true);
+    m_fanOffButton->setMinimumHeight(64);
+    connect(m_fanOffButton, &QPushButton::clicked, this, &MainWindow::turnFanOff);
+    m_fanAutoButton = new QPushButton("自动通风  关");
+    m_fanAutoButton->setObjectName("switchButton");
+    m_fanAutoButton->setCheckable(true);
+    m_fanAutoButton->setMinimumHeight(64);
+    connect(m_fanAutoButton, &QPushButton::clicked, this, &MainWindow::toggleFanAutoMode);
+    buttonLayout->addWidget(m_fanOnButton);
+    buttonLayout->addWidget(m_fanOffButton);
+    buttonLayout->addWidget(m_fanAutoButton);
+
+    m_fanStatusLabel = new QLabel("状态：等待设置");
+    m_fanStatusLabel->setObjectName("motorStatus");
+    m_fanStatusLabel->setWordWrap(true);
+    m_fanStatusLabel->setMinimumHeight(48);
+    m_fanReasonLabel = new QLabel("原因：手动模式");
+    m_fanReasonLabel->setObjectName("motorStatus");
+    m_fanReasonLabel->setWordWrap(true);
+    m_fanReasonLabel->setMinimumHeight(48);
+
+    layout->addWidget(backButton);
+    layout->addWidget(title);
+    layout->addWidget(sensorPanel);
+    layout->addWidget(thresholdPanel);
+    layout->addLayout(buttonLayout);
+    layout->addWidget(m_fanStatusLabel);
+    layout->addWidget(m_fanReasonLabel);
+    layout->addStretch(1);
+
+    updateFanTemperatureThresholdLabel(m_fanTemperatureThresholdSlider->value());
+    updateFanHumidityThresholdLabel(m_fanHumidityThresholdSlider->value());
     return page;
 }
 
@@ -4024,6 +4236,192 @@ void MainWindow::updateLedThresholdLabel(int value)
 {
     if (m_ledThresholdValueLabel) {
         m_ledThresholdValueLabel->setText(QString("%1 lx").arg(value));
+    }
+}
+
+void MainWindow::updateFanTemperatureThresholdLabel(int value)
+{
+    if (m_fanTemperatureThresholdValueLabel) {
+        m_fanTemperatureThresholdValueLabel->setText(QString("%1 ℃").arg(value));
+    }
+}
+
+void MainWindow::updateFanHumidityThresholdLabel(int value)
+{
+    if (m_fanHumidityThresholdValueLabel) {
+        m_fanHumidityThresholdValueLabel->setText(QString("%1 %RH").arg(value));
+    }
+}
+
+void MainWindow::applyFanThresholds()
+{
+    if (!m_fanTemperatureThresholdSlider || !m_fanHumidityThresholdSlider) {
+        return;
+    }
+    QJsonObject patch;
+    patch.insert("fan_temperature_threshold", m_fanTemperatureThresholdSlider->value());
+    patch.insert("fan_humidity_threshold", m_fanHumidityThresholdSlider->value());
+    updateExternalControlState(patch);
+    if (m_fanAutoEnabled) {
+        runFanCommand("auto");
+    }
+}
+
+void MainWindow::turnFanOn()
+{
+    m_fanAutoEnabled = false;
+    m_fanWasStarted = true;
+    m_fanAutoTimer->stop();
+    if (m_fanAutoButton) {
+        m_fanAutoButton->setChecked(false);
+        m_fanAutoButton->setText("自动通风  关");
+    }
+    if (m_fanOffButton) {
+        m_fanOffButton->setChecked(false);
+    }
+    QJsonObject patch;
+    patch.insert("fan_switch", true);
+    patch.insert("fan_auto_enable", false);
+    patch.insert("fan_auto_reason", "手动开启");
+    updateExternalControlState(patch);
+    runFanCommand("on");
+}
+
+void MainWindow::turnFanOff()
+{
+    m_fanAutoEnabled = false;
+    m_fanWasStarted = false;
+    m_fanAutoTimer->stop();
+    if (m_fanAutoButton) {
+        m_fanAutoButton->setChecked(false);
+        m_fanAutoButton->setText("自动通风  关");
+    }
+    if (m_fanOnButton) {
+        m_fanOnButton->setChecked(false);
+    }
+    QJsonObject patch;
+    patch.insert("fan_switch", false);
+    patch.insert("fan_auto_enable", false);
+    patch.insert("fan_auto_reason", "手动关闭");
+    updateExternalControlState(patch);
+    runFanCommand("off");
+}
+
+void MainWindow::toggleFanAutoMode()
+{
+    m_fanAutoEnabled = !m_fanAutoEnabled;
+    if (m_fanAutoButton) {
+        m_fanAutoButton->setChecked(m_fanAutoEnabled);
+        m_fanAutoButton->setText(m_fanAutoEnabled ? "自动通风  开" : "自动通风  关");
+    }
+    QJsonObject patch;
+    patch.insert("fan_auto_enable", m_fanAutoEnabled);
+    patch.insert("fan_auto_reason", m_fanAutoEnabled ? "自动模式，等待环境数据" : "手动模式");
+    updateExternalControlState(patch);
+    if (m_fanAutoEnabled) {
+        updateFanAutoControl();
+        m_fanAutoTimer->start();
+    } else {
+        m_fanAutoTimer->stop();
+    }
+}
+
+void MainWindow::updateFanAutoControl()
+{
+    if (!m_fanAutoEnabled) {
+        return;
+    }
+    runFanCommand("auto");
+}
+
+double MainWindow::readLatestEnvironmentValue(const QString &column) const
+{
+    QFile file(kSensorCsvFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    QStringList rows;
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (!line.isEmpty()) {
+            rows.append(line);
+        }
+    }
+    if (rows.size() < 2) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const QStringList headers = parseCsvLine(rows.first());
+    const int index = headers.indexOf(column);
+    if (index < 0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    const QStringList values = parseCsvLine(rows.last());
+    if (index >= values.size()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    bool ok = false;
+    const double value = values.at(index).trimmed().toDouble(&ok);
+    return ok ? value : std::numeric_limits<double>::quiet_NaN();
+}
+
+void MainWindow::runFanCommand(const QString &command)
+{
+    QProcess process;
+    QStringList args;
+    args << kFanCommandScript << command;
+    process.setWorkingDirectory("/home/elf/projects");
+    process.start("python3", args);
+    if (!process.waitForStarted(1000)) {
+        if (m_fanStatusLabel) {
+            m_fanStatusLabel->setText("状态：风扇命令启动失败");
+        }
+        return;
+    }
+
+    process.waitForFinished(3000);
+    const QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
+    const QString error = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+    if (process.state() != QProcess::NotRunning) {
+        process.kill();
+        process.waitForFinished(500);
+    }
+
+    if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
+        const QJsonObject fanState = readExternalControlState();
+        if (command == "on") {
+            m_fanWasStarted = true;
+        } else if (command == "off") {
+            m_fanWasStarted = false;
+        } else if (fanState.contains("fan_switch")) {
+            m_fanWasStarted = fanState.value("fan_switch").toBool();
+        }
+        if (command == "auto" && fanState.contains("fan_auto_enable")) {
+            m_fanAutoEnabled = fanState.value("fan_auto_enable").toBool();
+        }
+        if (m_fanStatusLabel) {
+            m_fanStatusLabel->setText(m_fanWasStarted ? "状态：风扇运行中" : "状态：风扇已停止");
+        }
+        if (m_fanReasonLabel) {
+            const QString stateReason = fanState.value("fan_auto_reason").toString();
+            m_fanReasonLabel->setText("原因：" + (stateReason.isEmpty() ? output : stateReason));
+        }
+        QJsonObject patch;
+        patch.insert("fan_switch", m_fanWasStarted);
+        if (command == "on" || command == "off") {
+            patch.insert("fan_auto_enable", false);
+            patch.insert("fan_auto_reason", command == "on" ? "手动开启" : "手动关闭");
+        }
+        updateExternalControlState(patch);
+    } else if (m_fanStatusLabel) {
+        const QString message = !error.isEmpty() ? error : output;
+        m_fanStatusLabel->setText("状态：风扇命令失败 " + message.left(120));
+        QJsonObject patch;
+        patch.insert("error_message", "fan: " + message.left(220));
+        updateExternalControlState(patch);
     }
 }
 

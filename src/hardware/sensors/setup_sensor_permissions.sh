@@ -36,7 +36,7 @@ KERNEL=="iio:device*", GROUP="i2c", MODE="0660"
 SUBSYSTEM=="spidev", GROUP="spi", MODE="0660"
 KERNEL=="spidev[0-9]*.[0-9]*", GROUP="spi", MODE="0660"
 
-# GPIO character devices for future hardware controls.
+# GPIO character devices, including the ventilation fan on GPIO3_B3.
 SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
 KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
 

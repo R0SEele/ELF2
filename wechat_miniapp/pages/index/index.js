@@ -114,6 +114,11 @@ Page({
     ledOn: false,
     ledBrightness: 40,
     autoSort: true,
+    fanOn: false,
+    fanAuto: false,
+    fanTemperatureThreshold: 30,
+    fanHumidityThreshold: 75,
+    fanReason: "手动模式",
     detectState: { display: "空闲", class: "muted", result: "" },
     conveyorOptions: optionSets.conveyor_cmd,
     speedOptions: optionSets.conveyor_speed,
@@ -211,6 +216,16 @@ Page({
           environment,
           batch: this.buildBatch(itemMap(data.groups.batch))
         };
+        if (Date.now() >= (this.controlLockUntil || 0)) {
+          patch.fanOn = control.fan_switch ? !!control.fan_switch.value : this.data.fanOn;
+          patch.fanAuto = control.fan_auto_enable ? !!control.fan_auto_enable.value : this.data.fanAuto;
+          patch.fanTemperatureThreshold = control.fan_temperature_threshold
+            ? Number(control.fan_temperature_threshold.value) : this.data.fanTemperatureThreshold;
+          patch.fanHumidityThreshold = control.fan_humidity_threshold
+            ? Number(control.fan_humidity_threshold.value) : this.data.fanHumidityThreshold;
+          patch.fanReason = control.fan_auto_reason
+            ? control.fan_auto_reason.display : (patch.fanAuto ? "自动模式" : "手动模式");
+        }
         patch.detectState = {
           display: pickDisplay(control, "detect_status", "空闲"),
           class: classFrom(DETECT_CLASS, rawOf(control, "detect_status")),
@@ -344,6 +359,32 @@ Page({
     const value = !!event.detail.value;
     this.setData({ autoSort: value });
     this.sendCommand("auto_sort_enable", value);
+  },
+
+  onFanSwitch(event) {
+    const value = !!event.detail.value;
+    this.setData({ fanOn: value, fanAuto: false, fanReason: value ? "手动开启" : "手动关闭" });
+    this.sendCommand("fan_switch", value);
+  },
+
+  onFanAutoChange(event) {
+    const value = !!event.detail.value;
+    this.setData({ fanAuto: value, fanReason: value ? "自动模式，等待环境数据" : "手动模式" });
+    this.sendCommand("fan_auto_enable", value);
+  },
+
+  onFanThresholdBlur(event) {
+    const code = String(event.currentTarget.dataset.code || "");
+    const isTemperature = code === "fan_temperature_threshold";
+    const fallback = isTemperature ? this.data.fanTemperatureThreshold : this.data.fanHumidityThreshold;
+    const maximum = isTemperature ? 60 : 100;
+    const value = Math.max(0, Math.min(maximum, Math.round(Number(event.detail.value) || fallback)));
+    if (isTemperature) {
+      this.setData({ fanTemperatureThreshold: value });
+    } else {
+      this.setData({ fanHumidityThreshold: value });
+    }
+    this.sendCommand(code, value);
   },
 
   onConveyorTap(event) {
